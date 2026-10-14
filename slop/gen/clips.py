@@ -83,6 +83,7 @@ from .. import ledger
 from ..config import SlopError, load_project
 from ..sync.songdata import CLEAN_LO, SongData, norm_compact
 from . import higgsfield as hf
+from . import hedra
 from . import hosting
 from . import models as reg
 from . import store
@@ -202,6 +203,9 @@ def probe_duration(path: Path) -> float | None:
 def inflight_msg(c: dict) -> str:
     cid = c["id"]
     unk = store.unknown_take(c)
+    if unk and unk.get("provider") == "hedra":
+        return (f"{cid} take {unk['n']}: Hedra outcome unknown, still reserved. Find the job in Hedra, then "
+                f"slop clip poll {cid} --job-id JOB_ID; do not submit again.")
     if unk:
         return (f"{cid} take {unk['n']}: the submit got no clear answer, so it may be running and is counted as spent. Look "
                 "for it at https://openrouter.ai/activity: found -> slop clip poll " + cid + " --job-id JOB_ID; nothing there "
@@ -557,6 +561,8 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
             raise SlopError(f"sung clips need a model that takes an audio reference (bytedance/seedance-2.x); {model} does "
                             "not, so its take could not lip-sync: --model bytedance/seedance-2.5 (or "
                             "bytedance/seedance-2.0-mini for cheap drafts), or make it a motion clip (--kind motion)")
+    elif prov == "hedra":
+        mdl = hedra.MODEL
     elif kind == "sung":
         mdl, note = sung_default_model(project)
         if note and prov == "openrouter":
@@ -777,9 +783,14 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
     if model:
         c["model"] = model; changed.append("model")
     if provider:
-        if provider not in ("openrouter", "higgsfield"):
-            raise SlopError("--provider must be openrouter or higgsfield")
+        if provider not in ("openrouter", "higgsfield", "hedra"):
+            raise SlopError("--provider must be openrouter, higgsfield or hedra")
+        previous_provider = c.get("provider")
         c["provider"] = provider; changed.append("provider")
+        if provider == "hedra" and previous_provider != "hedra" and not model:
+            c["model"] = hedra.MODEL
+        elif previous_provider == "hedra" and provider != "hedra" and not model:
+            c["model"] = default_model(proj(pdir))
         if provider == "higgsfield" and not sung and c.get("frame") != "first" and not frame:
             warns.append(f"on Higgsfield a motion clip can keep the plate's exact composition AND the audio: slop clip set "
                          f"{cid} --frame first (start_image + audio_references)")
@@ -997,6 +1008,8 @@ def lock_warnings(c: dict) -> list[str]:
 # ------------------------------------------------------------------------------------------------ costs
 def clip_cost(c: dict) -> dict:
     b = c.get("body") or {}
+    if c.get("provider") == "hedra":
+        return {"usd": None}
     if c.get("provider") == "higgsfield":
         cr = hf.credits(int(b.get("duration") or 5), b.get("resolution") or "720p")
         return {"credits": cr, "usd": round(cr * hf.USD_PER_CREDIT, 2)}
@@ -1138,7 +1151,9 @@ def preflight(pdir: Path, c: dict, project: dict, *, resolution: str | None = No
     res = resolution or (c.get("body") or {}).get("resolution") or "720p"        # --res applies to this take only
     if no_audio_ref and c.get("kind") == "sung":
         probs.append("a sung clip is never submitted without its audio window (the lips follow it): drop --no-audio-ref")
-    if c.get("provider") == "higgsfield":
+    if c.get("provider") == "hedra":
+        model = c.get("model") or hedra.MODEL
+    elif c.get("provider") == "higgsfield":
         model = hf.MODEL
     else:
         model = c.get("model") or default_model(project)
@@ -1249,7 +1264,12 @@ def dry_run(pdir: Path, c: dict, project: dict, *, resolution: str | None = None
 def submit(pdir: Path, cid: str, *, provider: str | None = None, yes: bool = False, resolution: str | None = None,
            no_audio_ref: bool = False, experimental_data: bool = False, resubmit_unknown: bool = False,
            client: OpenRouter | None = None, dry: bool = False, finalize_from: int | None = None,
-           again: bool = False) -> dict:
+           again: bool = False, hedra_transport: str = "api", hedra_cost: float | None = None,
+           hedra_currency: str | None = None, quote_only: bool = False) -> dict:
+    if hedra_transport not in ("api", "mcp"):
+        raise SlopError("--hedra-transport must be api or mcp")
+    if quote_only and (finalize_from is not None or dry):
+        raise SlopError("--quote-only cannot be combined with --dry-run or --finalize-from")
     if finalize_from is not None:
         if provider and provider != "higgsfield":
             raise SlopError("--finalize-from finalizes a Higgsfield 480p draft: use --provider higgsfield (or leave "
@@ -1261,16 +1281,27 @@ def submit(pdir: Path, cid: str, *, provider: str | None = None, yes: bool = Fal
     project = proj(pdir)
     flags = ""
     if provider and provider != c.get("provider"):
-        if provider not in ("openrouter", "higgsfield"):
-            raise SlopError("--provider must be openrouter or higgsfield")
+        if provider not in ("openrouter", "higgsfield", "hedra"):
+            raise SlopError("--provider must be openrouter, higgsfield or hedra")
+        previous_provider = c.get("provider")
         c["provider"] = provider
+        if provider == "hedra":
+            c["model"] = hedra.MODEL
+        elif previous_provider == "hedra":
+            c["model"] = default_model(project)
         flags += f" --provider {provider}"
+    if c.get("provider") != "hedra" and (quote_only or hedra_transport != "api" or hedra_cost is not None or hedra_currency is not None):
+        raise SlopError("--hedra-* options require --provider hedra")
+    if dry and c.get("provider") == "hedra":
+        return hedra.dry_run(pdir, c, transport=hedra_transport, resolution=resolution, no_audio_ref=no_audio_ref)
     if dry:
         flags += (f" --res {resolution}" if resolution else "") + (" --no-audio-ref" if no_audio_ref else "")
         return dry_run(pdir, c, project, resolution=resolution, no_audio_ref=no_audio_ref, flags=flags)
     st = c.get("status")
     if st == "submitted":
         unk = store.unknown_take(c)
+        if unk and unk.get("provider") == "hedra":
+            raise SlopError(f"{cid}: Hedra outcome unknown; do not resubmit. Locate the job, then clip poll {cid} --job-id ID")
         if not (unk and resubmit_unknown):
             raise SlopError(inflight_msg(c) if unk else
                             f"{cid} already has a take in flight: slop clip poll {cid} (or slop clip ingest for Higgsfield)")
@@ -1284,12 +1315,15 @@ def submit(pdir: Path, cid: str, *, provider: str | None = None, yes: bool = Fal
         store.save(pdir, c)
     if st != "locked":
         raise SlopError(f"{cid} is '{st}', not locked: spending needs a locked clip — review it, then slop clip lock {cid}")
-    if not (yes or gate_ok(project, c)):
+    if not quote_only and not (yes or gate_ok(project, c)):
         raise SlopError(f"submitting {cid} spends money ({describe_cost(c)}): show the prompt and the estimate to the user and "
                         "re-run with --yes after they agree")
     probs, res, model = preflight(pdir, c, project, resolution=resolution, no_audio_ref=no_audio_ref)
     if probs:
         raise SlopError(f"{cid} is not ready:\n  - " + "\n  - ".join(probs))
+    if c["provider"] == "hedra":
+        return hedra.submit(pdir, c, transport=hedra_transport, yes=yes, resolution=res, no_audio_ref=no_audio_ref,
+                            cost=hedra_cost, currency=hedra_currency, client=client, quote_only=quote_only)
     if c["provider"] == "higgsfield":
         return _submit_higgsfield(pdir, c, yes=yes, resolution=res)
     send = {**c, "body": {**c["body"], "resolution": res}}
@@ -1523,10 +1557,15 @@ def finalize(pdir: Path, cid: str, take_n: int, *, yes: bool = False, dry: bool 
 def poll(pdir: Path, cids: list[str] | None = None, *, wait_s: float = 0.0, job_id: str | None = None,
          client: OpenRouter | None = None, sleep=None) -> dict:
     attached = None
+    hedra_client = client if isinstance(client, hedra.Hedra) else None
     if job_id:
         if not cids or len(cids) != 1:
             raise SlopError("--job-id attaches one job to one clip: slop clip poll CLIP --job-id JOB_ID")
         c = store.load(pdir, cids[0])
+        if any(t.get("provider") == "hedra" and t.get("status") in ("unknown", "submitted", "requested", "pending")
+               for t in c.get("takes", [])):
+            r = hedra.poll(pdir, c, wait_s=wait_s, job_id=job_id, client=client, sleep=sleep)
+            return {"results": [r], "text": r["text"]}
         unk = store.unknown_take(c)
         if not unk:
             if any(t.get("id") == job_id for t in c.get("takes") or []):
@@ -1547,6 +1586,10 @@ def poll(pdir: Path, cids: list[str] | None = None, *, wait_s: float = 0.0, job_
         lines.append(f"{cids[0]}: job {job_id} attached to take {attached}")
     client = client or (OpenRouter() if any(_pending_or(c) for c in clips) else None)
     for c in clips:
+        if any(t.get("provider") == "hedra" and t.get("status") in ("unknown", "submitted", "requested", "pending")
+               for t in c.get("takes", [])):
+            r = hedra.poll(pdir, c, wait_s=wait_s, sleep=sleep, client=hedra_client)
+            results.append(r); lines.append(r["text"]); continue
         tk = _pending_or(c)
         if not tk:
             hfk = next((t for t in reversed(c.get("takes") or []) if t.get("provider") == "higgsfield"
@@ -1619,8 +1662,13 @@ def _pending_or(c: dict) -> dict | None:
 @project_hints
 def ingest(pdir: Path, cid: str, *, file: str | None = None, url: str | None = None, job_id: str | None = None,
            credits: float | None = None, pending: bool = False, failed: str | None = None, declined: str | None = None,
-           provider: str | None = None, session=None) -> dict:
+           provider: str | None = None, session=None, cost_usd: float | None = None) -> dict:
     c = store.load(pdir, cid)
+    if provider == "hedra" or (provider is None and c.get("provider") == "hedra"):
+        return hedra.ingest(pdir, c, file=file, url=url, job_id=job_id, credits=credits, cost_usd=cost_usd,
+                            pending=pending, failed=failed, declined=declined, session=session)
+    if cost_usd is not None:
+        raise SlopError("--cost-usd is for Hedra results")
     prov = provider or ("higgsfield" if any(t.get("provider") == "higgsfield" and t.get("status") in ("requested", "pending")
                                             for t in c.get("takes") or []) else c.get("provider") or "higgsfield")
     tk = next((t for t in reversed(c.get("takes") or []) if t.get("provider") == prov

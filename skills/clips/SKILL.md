@@ -1,6 +1,6 @@
 ---
 name: clips
-description: Use when making video clips - drafting them from the board, writing the prompt book, hosting audio windows and start images, submitting to OpenRouter or through the Higgsfield connector, finalizing a Higgsfield draft, polling, ingesting takes, lip-sync checks, covers, and declined or failed takes.
+description: Use when making video clips - drafting them from the board, writing the prompt book, hosting audio windows and start images, submitting to OpenRouter, Hedra API/MCP, or through the Higgsfield connector, finalizing a Higgsfield draft, polling, ingesting takes, lip-sync checks, covers, and declined or failed takes.
 ---
 
 # Clips - one prompt book, the owner reads it, then spend, sync, covers
@@ -33,3 +33,6 @@ Read docs/60-clips.md §1 and §9 (the order of work) first. The prompt is the p
 12. Sung clips (docs/61-lipsync.md §3-§8): `slop --json -p NAME clip sync CLIP`, then `slop --json -p NAME clip coverage`, then `slop --json -p NAME clip cover CLIP --make` (covers need their own lock and yes) or cut away.
 13. Routing for a sung window (docs/61 §8): takes from a long prompt that did not copy: rewrite it short and retake on the same provider first (steps 2-4). Then two OpenRouter takes of the short form that do not copy the lips, then a Higgsfield 480p draft (finalize it if kept, step 10), else cut away. Never a third short OpenRouter try.
 14. A clip made after the board plays once its shots link it (audit: plays on no shot): `slop --json -p NAME board set SHOT --clip CLIP` (a board change: the owner re-approves), then `slop --json -p NAME edit edl`. Real spend: `slop --json -p NAME spend`; Higgsfield: only what `transactions` charged (the project log is an estimate).
+
+## Hedra (optional alternative; docs/63-hedra.md)
+When the owner chooses Hedra, use `clip new/set --provider hedra`; do not apply the OpenRouter/Higgsfield routing recommendations to override their choice. Read docs/63-hedra.md for the exact two-transport workflow. API is the default: secure `HEDRA_API_KEY`, `clip submit CLIP --quote-only`, owner approves the quote and matching `budget.hedra_usd`, then `--yes` and `clip poll`. MCP: connect https://hedra.com/mcp, get_model/get_balance, verify the tunnel, `clip submit CLIP --hedra-transport mcp --quote-only`, upload the files and estimate with `generation_tool=generate_video`. After approval reserve `--hedra-cost COST --hedra-currency USD|credits --yes` and execute the request file's steps. Keep the quoted currency, workspace and billing mode; use the saved idempotency key, record the job id immediately, get_generations at its suggested interval, then clip ingest and clip sync. Unknown outcome: keep the reservation and recover the job, never blindly regenerate. Failed does not imply refunded: settle only to the provider's confirmed net cost. Hedra supports Seedance 2.5 in this integration; its live quality is not yet production-validated.

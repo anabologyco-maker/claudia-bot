@@ -97,6 +97,9 @@ CATALOG = [
          cost="your Higgsfield credits; every video is priced before it is made (get_cost)",
          unlocks="Higgsfield video: Seedance 2.5 sung clips (copies the vocals more reliably on stubborn windows), "
                  "Kling, Veo and more on your credits"),
+    dict(id="hedra", group="connectors", title="Hedra (API or MCP)", kind="record", need="ooo",
+         cost="Hedra live estimate: API USD wallet or MCP USD/credits; separate caps",
+         unlocks="Seedance 2.5 sung and motion clips via --provider hedra; choose --hedra-transport api|mcp"),
     dict(id="drive", group="connectors", title="Google Drive connector", kind="record", need="ooo",
          cost="free", unlocks="Finished videos and big files sent to you as links in your own Google Drive (big "
                                "videos often fail as chat attachments)"),
@@ -164,14 +167,14 @@ CATALOG = [
 SPEC = {c["id"]: c for c in CATALOG}
 ITEM_IDS = [c["id"] for c in CATALOG]
 # the static order; report() puts the agent items in the user's engine order (see priority())
-PRIORITY = ["tier", "toolkit", "path", "doctor", "openrouter", "higgsfield", "api-images", "video", "suno", "lyria",
+PRIORITY = ["tier", "toolkit", "path", "doctor", "openrouter", "higgsfield", "hedra", "api-images", "video", "suno", "lyria",
             "midjourney", "mj-profile", "full-profile", "coding-agents", "agent-claude", "agent-codex", "agent-muse",
             "agent-gemini", "home-claude", "home-codex", "home-muse", "home-gemini", "gpu", "first-project", "taste",
             "arena", "drive", "suno-signin", "mj-signin", "codex-images"]
 # `video` is said by the tier unlocks and by openrouter / higgsfield themselves
 HEADLINE = set(ITEM_IDS) - {"tier", "toolkit", "path", "doctor", "coding-agents", "video"}
 # items that follow other items (done as soon as one of them is): never marked done by hand, never a step of their own
-DERIVED = {"api-images": ("openrouter", "higgsfield"), "video": ("openrouter", "higgsfield"),
+DERIVED = {"api-images": ("openrouter", "higgsfield"), "video": ("openrouter", "higgsfield", "hedra"),
            "lyria": ("openrouter",), "codex-images": ("agent-codex",)}
 # the two ways to make clips: Studio and Director need one of them (item video), both are recommended
 ROUTES = ("openrouter", "higgsfield")
@@ -327,6 +330,8 @@ def _newest(ctx: Ctx) -> dict | None:
 # ---------------------------------------------------------------- the two clip routes (Studio needs one of them)
 def route_ok(ctx: Ctx, rid: str) -> bool:
     """OpenRouter: a valid (or, offline, present) key. Higgsfield: HIGGSFIELD_API_KEY or the connector recorded."""
+    if rid == "hedra":
+        return bool((ctx.env or {}).get("HEDRA_API_KEY")) or (_mark(ctx, "hedra") or {}).get("state") == "done"
     if rid == "openrouter":
         return key_ok(ctx)
     return bool((ctx.env or {}).get("HIGGSFIELD_API_KEY")) or (_mark(ctx, "higgsfield") or {}).get("state") == "done"
@@ -343,6 +348,8 @@ def _route_skipped(ctx: Ctx, rid: str) -> bool:
 def route_need(ctx: Ctx, rid: str) -> str | None:
     """Studio / Director: each route is recommended; the last one left (the other skipped, not working) is required.
     None = the catalogue's (recommended)."""
+    if route_ok(ctx, "hedra"):
+        return None
     o = other_route(rid)
     if ctx.tier != "quick" and not route_ok(ctx, o) and _route_skipped(ctx, o):
         return "r"
@@ -351,6 +358,8 @@ def route_need(ctx: Ctx, rid: str) -> str | None:
 
 def route_note(ctx: Ctx, rid: str) -> str:
     """Why this route matters for the tier, in one clause."""
+    if route_ok(ctx, "hedra"):
+        return "Hedra already makes clips; this route is optional"
     o, name = other_route(rid), ROUTE_NAMES[rid]
     if ctx.tier == "quick":
         return f"recommended, not required: {QUICK_BARE}"
@@ -698,6 +707,12 @@ def _higgsfield(ctx: Ctx) -> dict:
     return r
 
 
+def _hedra(ctx: Ctx) -> dict:
+    if (ctx.env or {}).get("HEDRA_API_KEY"):
+        return {"raw": "done", "why": "HEDRA_API_KEY is set (API transport; key not verified)"}
+    return _connector(ctx, "hedra", "Hedra (https://hedra.com/mcp)", "call get_model for seedance-25; when it answers, ")
+
+
 def _drive(ctx: Ctx) -> dict:
     r = _connector(ctx, "drive", "Google Drive", "list one folder; when it answers, ")
     if r["raw"] != "done":
@@ -842,6 +857,9 @@ def _api_images(ctx: Ctx) -> dict:
 
 
 def _video(ctx: Ctx) -> dict:
+    if route_ok(ctx, "hedra"):
+        return {"raw": "done", "data": {"via": _vias(ctx) + ["Hedra"]},
+                "why": "Hedra Seedance 2.5 clips: --provider hedra --hedra-transport api|mcp; measure sung lip sync"}
     via = _vias(ctx)
     if len(via) == 2:
         return _free_tier_warn(ctx, {"raw": "done", "data": {"via": via},
@@ -1092,7 +1110,7 @@ def _first_project(ctx: Ctx) -> dict:
 
 
 FUNCS = {"tier": _tier, "toolkit": _toolkit, "path": _path, "doctor": _doctor, "full-profile": _full,
-         "openrouter": _openrouter, "arena": _arena, "higgsfield": _higgsfield, "drive": _drive, "suno": _suno,
+         "openrouter": _openrouter, "arena": _arena, "higgsfield": _higgsfield, "hedra": _hedra, "drive": _drive, "suno": _suno,
          "suno-signin": _suno_signin, "lyria": _lyria, "midjourney": _midjourney, "mj-profile": _mj_profile,
          "mj-signin": _mj_signin, "api-images": _api_images, "codex-images": _codex_images, "video": _video,
          "coding-agents": _coding_agents, "gpu": _gpu, "taste": _taste, "first-project": _first_project}

@@ -77,6 +77,16 @@ Higgsfield connector is used instead), `ARENA_TOKEN` (Are.na taste import). Codi
 (`CLAUDE_LOGIN_CODE`, `CLAUDE_CODE_OAUTH_TOKEN`, `GEMINI_LOGIN_CODE`, `GEMINI_API_KEY`) go through the same card
 (`docs/96-setup-and-hardware.md` §3).
 
+## Hedra video generation (API or MCP)
+
+Use `--provider hedra` for Seedance 2.5 sung or motion clips. Choose direct API with
+`clip submit CLIP --hedra-transport api` (default; `HEDRA_API_KEY`) or the
+[Hedra MCP connector](https://hedra.com/mcp) with `--hedra-transport mcp` (no API key).
+`--quote-only` prepares a free estimate before generation. Separate `budget.hedra_usd` and
+`budget.hedra_credits` caps preserve the quote's billing unit.
+See [Hedra setup, commands and Grok Bot smoke test](docs/63-hedra.md). Image/song generation and
+existing provider defaults are unchanged. Live generation and lip-sync quality need the documented smoke test.
+
 ## Quickstart (Quick tier)
 
 Put the project on **every** command line (`--project NAME` or `SLOP_PROJECT=NAME`); there is no default project.
@@ -212,12 +222,12 @@ or after the command name; the documented form is `slop --json --project NAME <c
 | `slop gen song [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--clip] [--model MODEL] [--seed SEED] [--as-song] [--yes]` | generate a song with Lyria via OpenRouter (~$0.08; --clip 30 s ~$0.04) |
 | `slop gen host CLIP [--url URL] [--media-id MEDIA_ID] [--role audio\|start] [--tunnel] [--no-verify] [--data-uri] [--experimental]` | give a clip's window (or start image) an HTTPS URL for OpenRouter / Higgsfield media_import_url, or record a media_id |
 | `slop gen tunnel start\|stop\|status [--no-verify] [--verify]` | Cloudflare quick tunnel for HTTPS hosting (start\|stop\|status) |
-| `slop clip new SHOT --kind sung\|motion [--id ID] [--t0 T0] [--t1 T1] [--song-t0 SONG_T0] [--duration DURATION] [--start START] [--frame ref\|first] [--style screenplay\|short] [--window clean\|vocal\|mix] [--provider openrouter\|higgsfield] [--model MODEL] [--res 480p\|720p\|1080p] [--force] [--words WORDS]` | draft clips/<id>.json for a storyboard shot (window, exact words, prompt scaffold) |
-| `slop clip set CLIP [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--requote] [--words WORDS] [--duration DURATION] [--song-t0 SONG_T0] [--t0 T0] [--t1 T1] [--res 480p\|720p\|1080p] [--model MODEL] [--provider openrouter\|higgsfield] [--frame ref\|first] [--start START] [--ref REF] [--clear-refs] [--audio AUDIO] [--audio-mode clean\|vocal\|mix] [--recut] [--no-audio] [--audio-on] [--why WHY]` | change a clip (back to draft; re-lock after) |
+| `slop clip new SHOT --kind sung\|motion [--id ID] [--t0 T0] [--t1 T1] [--song-t0 SONG_T0] [--duration DURATION] [--start START] [--frame ref\|first] [--style screenplay\|short] [--window clean\|vocal\|mix] [--provider openrouter\|higgsfield\|hedra] [--model MODEL] [--res 480p\|720p\|1080p] [--force] [--words WORDS]` | draft clips/<id>.json for a storyboard shot (window, exact words, prompt scaffold) |
+| `slop clip set CLIP [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--requote] [--words WORDS] [--duration DURATION] [--song-t0 SONG_T0] [--t0 T0] [--t1 T1] [--res 480p\|720p\|1080p] [--model MODEL] [--provider openrouter\|higgsfield\|hedra] [--frame ref\|first] [--start START] [--ref REF] [--clear-refs] [--audio AUDIO] [--audio-mode clean\|vocal\|mix] [--recut] [--no-audio] [--audio-on] [--why WHY]` | change a clip (back to draft; re-lock after) |
 | `slop clip lock CLIP` | draft -> locked (checks: start, window, no [[slots]], exact quoted words) |
-| `slop clip submit CLIP [--provider openrouter\|higgsfield] [--yes] [--res 480p\|720p\|1080p] [--no-audio-ref] [--resubmit-unknown] [--dry-run] [--finalize-from TAKE] [--again]` | spend: OpenRouter job, or the Higgsfield request file for the bot (locked + --yes) |
+| `slop clip submit CLIP [--provider openrouter\|higgsfield\|hedra] [--yes] [--res 480p\|720p\|1080p] [--no-audio-ref] [--resubmit-unknown] [--dry-run] [--finalize-from TAKE] [--again] [--quote-only] [--hedra-transport api\|mcp] [--hedra-cost HEDRA_COST] [--hedra-currency USD\|credits]` | spend: OpenRouter job, or the Higgsfield request file for the bot (locked + --yes) |
 | `slop clip poll [CLIP] [--wait WAIT] [--job-id JOB_ID]` | check OpenRouter jobs (all in flight when no CLIP); download completed takes |
-| `slop clip ingest CLIP [--file FILE] [--url URL] [--job-id JOB_ID] [--credits CREDITS] [--provider higgsfield\|openrouter\|manual] [--pending] [--failed FAILED] [--declined DECLINED]` | add a take from a file or a result URL (Higgsfield), or mark a request pending/failed |
+| `slop clip ingest CLIP [--file FILE] [--url URL] [--job-id JOB_ID] [--credits CREDITS] [--provider higgsfield\|openrouter\|hedra\|manual] [--pending] [--failed FAILED] [--declined DECLINED] [--cost-usd COST_USD]` | add a take from a file or a result URL (Higgsfield), or mark a request pending/failed |
 | `slop clip sync CLIP [--take TAKE] [--no-png]` | measure lip sync of a take (avsync) -> take.sync + PNG |
 | `slop clip frame CLIP [--at AT] [--take TAKE] [--out OUT]` | a still from a take at a song time (default: its last in-sync frame) to start a clip from |
 | `slop clip coverage [CLIP] [--min-gap MIN_GAP]` | sung seconds held in sync (all sung clips, or the given chains) |

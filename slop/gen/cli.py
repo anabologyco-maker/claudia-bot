@@ -307,7 +307,8 @@ def cmd_clip_submit(a) -> dict:
     from . import clips
     r = clips.submit(_pd(a), a.clip, provider=a.provider, yes=a.yes, resolution=a.res, no_audio_ref=a.no_audio_ref,
                      experimental_data=a.experimental_data, resubmit_unknown=a.resubmit_unknown, dry=a.dry_run,
-                     finalize_from=a.finalize_from, again=a.again)
+                     finalize_from=a.finalize_from, again=a.again, hedra_transport=a.hedra_transport,
+                     hedra_cost=a.hedra_cost, hedra_currency=a.hedra_currency, quote_only=a.quote_only)
     r.pop("request", None)
     return r
 
@@ -323,7 +324,7 @@ def cmd_clip_ingest(a) -> dict:
     from . import clips
     pdir = _pd(a)
     return clips.ingest(pdir, a.clip, file=_in(pdir, a.file), url=a.url, job_id=a.job_id, credits=a.credits, pending=a.pending,
-                        failed=a.failed, declined=a.declined, provider=a.provider)
+                        failed=a.failed, declined=a.declined, provider=a.provider, cost_usd=a.cost_usd)
 
 
 @_hinted
@@ -526,7 +527,7 @@ def register(sub) -> None:
                    help="prompt grammar (default by kind: sung short, motion screenplay; docs/60-clips.md §4)")
     p.add_argument("--window", choices=["clean", "vocal", "mix"],
                    help="@Audio1: clean vocal (sung default), raw vocal stem, or the mix (motion default)")
-    p.add_argument("--provider", choices=["openrouter", "higgsfield"]); p.add_argument("--model")
+    p.add_argument("--provider", choices=["openrouter", "higgsfield", "hedra"]); p.add_argument("--model")
     p.add_argument("--res", choices=["480p", "720p", "1080p"]); p.add_argument("--force", action="store_true")
     p.add_argument("--words", help="sung: quote only these words (her words only; the clean window holds just them)")
     p.set_defaults(func=cmd_clip_new)
@@ -539,7 +540,7 @@ def register(sub) -> None:
     p.add_argument("--duration", type=int); p.add_argument("--song-t0", type=float)
     p.add_argument("--t0", type=float); p.add_argument("--t1", type=float)
     p.add_argument("--res", choices=["480p", "720p", "1080p"]); p.add_argument("--model")
-    p.add_argument("--provider", choices=["openrouter", "higgsfield"]); p.add_argument("--frame", choices=["ref", "first"])
+    p.add_argument("--provider", choices=["openrouter", "higgsfield", "hedra"]); p.add_argument("--frame", choices=["ref", "first"])
     p.add_argument("--start"); p.add_argument("--ref", action="append", default=[]); p.add_argument("--clear-refs", action="store_true")
     p.add_argument("--audio", help="use this file as the window audio (e.g. the clean vocal window)")
     p.add_argument("--audio-mode", choices=["clean", "vocal", "mix"]); p.add_argument("--recut", action="store_true")
@@ -551,7 +552,7 @@ def register(sub) -> None:
     p.add_argument("clip"); p.set_defaults(func=cmd_clip_lock)
 
     p = cs.add_parser("submit", help="spend: OpenRouter job, or the Higgsfield request file for the bot (locked + --yes)")
-    p.add_argument("clip"); p.add_argument("--provider", choices=["openrouter", "higgsfield"])
+    p.add_argument("clip"); p.add_argument("--provider", choices=["openrouter", "higgsfield", "hedra"])
     p.add_argument("--yes", action="store_true"); p.add_argument("--res", choices=["480p", "720p", "1080p"])
     p.add_argument("--no-audio-ref", action="store_true", help="motion only: submit without the song window")
     p.add_argument("--resubmit-unknown", action="store_true",
@@ -565,6 +566,10 @@ def register(sub) -> None:
                    help="with --finalize-from: a SECOND paid finalize of a draft that was already finalized (only when "
                         "the owner asks; the first finalized take is kept)")
     p.add_argument("--experimental-data", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--quote-only", action="store_true", help="Hedra: upload/prepare a free quote; no generation or reservation")
+    p.add_argument("--hedra-transport", choices=["api", "mcp"], default="api", help="Hedra: direct API (default) or connector request file")
+    p.add_argument("--hedra-cost", type=float, help="MCP: fresh Hedra estimate cost")
+    p.add_argument("--hedra-currency", choices=["USD", "credits"], help="MCP: currency from the same estimate")
     p.set_defaults(func=cmd_clip_submit)
 
     p = cs.add_parser("poll", help="check OpenRouter jobs (all in flight when no CLIP); download completed takes")
@@ -574,8 +579,9 @@ def register(sub) -> None:
 
     p = cs.add_parser("ingest", help="add a take from a file or a result URL (Higgsfield), or mark a request pending/failed")
     p.add_argument("clip"); p.add_argument("--file"); p.add_argument("--url"); p.add_argument("--job-id")
-    p.add_argument("--credits", type=float); p.add_argument("--provider", choices=["higgsfield", "openrouter", "manual"])
+    p.add_argument("--credits", type=float); p.add_argument("--provider", choices=["higgsfield", "openrouter", "hedra", "manual"])
     p.add_argument("--pending", action="store_true"); p.add_argument("--failed"); p.add_argument("--declined")
+    p.add_argument("--cost-usd", type=float, help="Hedra: confirmed net job cost in USD (including 0 for a refund)")
     p.set_defaults(func=cmd_clip_ingest)
 
     p = cs.add_parser("sync", help="measure lip sync of a take (avsync) -> take.sync + PNG")

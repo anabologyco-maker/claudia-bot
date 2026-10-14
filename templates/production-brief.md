@@ -120,6 +120,10 @@ the answers verbatim.
   `slop -p NAME plates ingest inbox/midjourney --batch BATCH`, `slop -p NAME song ingest inbox/suno/FILE`.
 - Paid steps (OpenRouter: API stills, clips, songs) read OPENROUTER_API_KEY from your environment; never print it or
   write it anywhere. Every spend still needs the director's yes (checkpoint 5) and stays under the caps.
+- When the director chooses Hedra, read {{TOOLKIT}}/docs/63-hedra.md. Use `--provider hedra` and API transport
+  with HEDRA_API_KEY from your environment (never print or save it); quote first and use the separate Hedra cap.
+  Hedra MCP is a Grok-run request-file flow; no relay job executes that connector yet. Do not assume the
+  production can call it. The documented MCP smoke test is run directly with Grok.
 - Higgsfield is Grok's connector, not yours, and no relay job runs it yet: never plan a Higgsfield step; a sung
   window OpenRouter cannot make is cut away or shown without lip sync.
 - Analysis, depth maps and every other heavy step run on this computer's CPU (a home-GPU link comes in a later

@@ -1586,6 +1586,8 @@ def ledger_summary(pdir: Path, proj: dict) -> dict:
         "total_est_usd": round(sum(b["est_usd"] for b in by.values()), 4),
         "budget": {"openrouter_usd": cap_usd, "openrouter_left_usd": round(cap_usd - or_est, 4) if cap_usd else None,
                    "higgsfield_credits": cap_cr, "higgsfield_left": round(cap_cr - hf_cr, 2) if cap_cr else None,
+                   "hedra_usd": float(budget.get("hedra_usd") or 0),
+                   "hedra_credits": float(budget.get("hedra_credits") or 0),
                    "confirm_over_usd": budget.get("confirm_over_usd")},
     }
 
@@ -2135,13 +2137,13 @@ def validate_setting(key: str, v):
             return v
         raise SlopError(f"lead.{sub} is not a lead key: lead.{', lead.'.join(LEAD_TEXT)}, lead.pronoun, lead.none")
     if top == "budget":
-        if sub in ("openrouter_usd", "confirm_over_usd"):
+        if sub in ("openrouter_usd", "hedra_usd", "confirm_over_usd"):
             return _num(key, v, 0, 10000)
-        if sub == "higgsfield_credits":
+        if sub in ("higgsfield_credits", "hedra_credits"):
             return _num(key, v, 0, 1_000_000)
         if sub == "motion_s":
             return _num(key, v, 0, 3600)
-        raise SlopError(f"budget.{sub} is not a budget key: budget.openrouter_usd, budget.higgsfield_credits, "
+        raise SlopError(f"budget.{sub} is not a budget key: budget.openrouter_usd, budget.higgsfield_credits, budget.hedra_usd, budget.hedra_credits, "
                         "budget.confirm_over_usd, budget.motion_s")
     if top == "models":
         if sub == "pin":
@@ -2200,8 +2202,8 @@ def _money_guard(proj: dict, key: str, had: bool, old, new) -> str | None:
     """Why this budget change loosens the owner's money guard (a cap up or removed, confirm_over_usd up, more paid
     clip seconds), or None (a cap lowered, or not a guard). The owner decides those, never the bot alone."""
     sub = key.split(".", 1)[1] if key.startswith("budget.") else None
-    if sub in ("openrouter_usd", "higgsfield_credits"):
-        unit = "$" if sub == "openrouter_usd" else ""
+    if sub in ("openrouter_usd", "higgsfield_credits", "hedra_usd", "hedra_credits"):
+        unit = "$" if sub.endswith("_usd") else ""
         cap_old = float(old) if had and old else float("inf")             # 0 / unset = no cap (ledger.check_budget)
         cap_new = float(new) if new else float("inf")
         if cap_new > cap_old:
@@ -2379,6 +2381,9 @@ def cmd_spend(args) -> dict:
         lines.append(f"budget: openrouter cap {util.money(bud['openrouter_usd'])} (left ~{util.money(bud['openrouter_left_usd'])})"
                      f" | higgsfield cap {bud['higgsfield_credits']:g} credits (left ~{bud['higgsfield_left']})"
                      f" | confirm over {util.money(bud['confirm_over_usd'])}")
+        if "hedra" in led["by_provider"] or bud["hedra_usd"] or bud["hedra_credits"]:
+            lines.append(f"Hedra caps: ${bud['hedra_usd']:g} USD / {bud['hedra_credits']:g} credits (0 = uncapped); "
+                         "unknown or unconfirmed refunds retain their estimate")
         if led["bad_lines"]:
             lines.append(f"WARNING: ledger.jsonl has {led['bad_lines']} unreadable lines")
     else:
