@@ -75,7 +75,7 @@ def lead_words(project: dict) -> dict:
     lead = project.get("lead") or {}
     pron = (lead.get("pronoun") or "She").strip().capitalize()
     poss = {"She": "Her", "He": "His", "They": "Their", "It": "Its"}.get(pron, "Their")
-    return {"noun": (lead.get("noun") or "the woman").strip(), "pronoun": pron, "possessive": poss,
+    return {"noun": (lead.get("noun") or {"She": "the woman", "He": "the man", "They": "the singer", "It": "the subject"}.get(pron, "the singer")).strip(), "pronoun": pron, "possessive": poss,
             "sings": _verb(pron, "sings"), "canon": (lead.get("canon") or "").strip(),
             "far": (lead.get("far") or "").strip()}
 

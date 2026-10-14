@@ -530,7 +530,8 @@ def _hw_list(tokens: list[dict]) -> list[list]:
 def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: float | None = None, t1: float | None = None,
         song_t0: float | None = None, duration: int | None = None, start: str | None = None, frame: str | None = None,
         style: str | None = None, provider: str | None = None, model: str | None = None, resolution: str | None = None,
-        force: bool = False, window_mode: str | None = None, words: str | None = None) -> dict:
+        force: bool = False, window_mode: str | None = None, words: str | None = None,
+        aspect_ratio: str | None = None) -> dict:
     if kind not in ("sung", "motion"):
         raise SlopError("--kind must be sung or motion")
     style = style or tpl.default_style(kind)                  # sung: the short form (it copies @Audio1); motion: screenplay
@@ -553,6 +554,8 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
     if need[1] <= need[0]:
         raise SlopError(f"empty needed span {need}")
     prov = provider or "openrouter"
+    if aspect_ratio and aspect_ratio not in hedra.ASPECTS:
+        raise SlopError("unsupported aspect ratio")
     warns: list[str] = []
     q_tokens: list | None = None
     if model:
@@ -636,7 +639,7 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
             "model": mdl, "frame": frame, "start": store.rel(pdir, sp), "start_sha1": sha,
             "refs": [], "videos": [], "song_t0": round(wt0, 3), "needed": [round(need[0], 3), round(need[1], 3)],
             "words": words, "window": window,
-            "body": {"prompt": prompt, "duration": dur, "resolution": resolution or "720p", "aspect_ratio": aspect(project),
+            "body": {"prompt": prompt, "duration": dur, "resolution": resolution or "720p", "aspect_ratio": aspect_ratio or ("adaptive" if prov == "hedra" else aspect(project)),
                      "generate_audio": True},
             "takes": [], "covers": [], "why": (shot.get("notes") or shot.get("action") or f"storyboard shot {shot_id}"),
             "created": store.now(), "hosted": {}, "declined": [], "history": [],
@@ -711,7 +714,7 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
                model: str | None = None, provider: str | None = None, frame: str | None = None, start: str | None = None,
                refs: list[str] | None = None, clear_refs: bool = False, audio: str | None = None,
                audio_mode: str | None = None, generate_audio: bool | None = None, recut: bool = False,
-               why: str | None = None, needed: list[float] | None = None) -> dict:
+               why: str | None = None, needed: list[float] | None = None, aspect_ratio: str | None = None) -> dict:
     c = store.load(pdir, cid)
     if c.get("status") == "submitted":
         raise SlopError(inflight_msg(c))
@@ -776,6 +779,10 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
         recut = True
     target_mode = audio_mode or cur_mode
     # ---- simple fields
+    if aspect_ratio:
+        if aspect_ratio not in hedra.ASPECTS:
+            raise SlopError("unsupported aspect ratio")
+        c["body"]["aspect_ratio"] = aspect_ratio; changed.append("aspect_ratio")
     if resolution:
         if resolution not in RESOLUTIONS:
             raise SlopError("--res must be 480p, 720p or 1080p")
@@ -979,8 +986,10 @@ def lock_problems(pdir: Path, c: dict) -> list[str]:
 @project_hints
 def lock(pdir: Path, cid: str) -> dict:
     c = store.load(pdir, cid)
+    next_step = (f"slop relay job --kind hedra --what quote --clip {cid}" if c.get("provider") == "hedra"
+                 else f"slop clip submit {cid} --yes")
     if c.get("status") == "locked":
-        return {"clip": c, "text": f"{cid} is already locked (ready to submit)"}
+        return {"clip": c, "text": f"{cid} is already locked; next: {next_step}"}
     if c.get("status") == "submitted":
         raise SlopError(inflight_msg(c))
     probs = lock_problems(pdir, c)
@@ -990,7 +999,7 @@ def lock(pdir: Path, cid: str) -> dict:
     store.save(pdir, c)
     warns = lock_warnings(c)
     return {"clip": c, "warnings": warns,
-            "text": f"{cid} locked: ready to submit (slop clip submit {cid} --yes) — estimate: {describe_cost(c)}"
+            "text": f"{cid} locked; next: {next_step} — estimate: {describe_cost(c)}"
                     + "".join("\n  ! " + w for w in warns)}
 
 
@@ -1264,10 +1273,8 @@ def dry_run(pdir: Path, c: dict, project: dict, *, resolution: str | None = None
 def submit(pdir: Path, cid: str, *, provider: str | None = None, yes: bool = False, resolution: str | None = None,
            no_audio_ref: bool = False, experimental_data: bool = False, resubmit_unknown: bool = False,
            client: OpenRouter | None = None, dry: bool = False, finalize_from: int | None = None,
-           again: bool = False, hedra_transport: str = "api", hedra_cost: float | None = None,
+           again: bool = False, hedra_cost: float | None = None,
            hedra_currency: str | None = None, quote_only: bool = False) -> dict:
-    if hedra_transport not in ("api", "mcp"):
-        raise SlopError("--hedra-transport must be api or mcp")
     if quote_only and (finalize_from is not None or dry):
         raise SlopError("--quote-only cannot be combined with --dry-run or --finalize-from")
     if finalize_from is not None:
@@ -1290,10 +1297,10 @@ def submit(pdir: Path, cid: str, *, provider: str | None = None, yes: bool = Fal
         elif previous_provider == "hedra":
             c["model"] = default_model(project)
         flags += f" --provider {provider}"
-    if c.get("provider") != "hedra" and (quote_only or hedra_transport != "api" or hedra_cost is not None or hedra_currency is not None):
+    if c.get("provider") != "hedra" and (quote_only or hedra_cost is not None or hedra_currency is not None):
         raise SlopError("--hedra-* options require --provider hedra")
     if dry and c.get("provider") == "hedra":
-        return hedra.dry_run(pdir, c, transport=hedra_transport, resolution=resolution, no_audio_ref=no_audio_ref)
+        return hedra.dry_run(pdir, c, resolution=resolution, no_audio_ref=no_audio_ref)
     if dry:
         flags += (f" --res {resolution}" if resolution else "") + (" --no-audio-ref" if no_audio_ref else "")
         return dry_run(pdir, c, project, resolution=resolution, no_audio_ref=no_audio_ref, flags=flags)
@@ -1322,8 +1329,8 @@ def submit(pdir: Path, cid: str, *, provider: str | None = None, yes: bool = Fal
     if probs:
         raise SlopError(f"{cid} is not ready:\n  - " + "\n  - ".join(probs))
     if c["provider"] == "hedra":
-        return hedra.submit(pdir, c, transport=hedra_transport, yes=yes, resolution=res, no_audio_ref=no_audio_ref,
-                            cost=hedra_cost, currency=hedra_currency, client=client, quote_only=quote_only)
+        return hedra.submit(pdir, c, yes=yes, resolution=res, no_audio_ref=no_audio_ref,
+                            cost=hedra_cost, currency=hedra_currency, quote_only=quote_only)
     if c["provider"] == "higgsfield":
         return _submit_higgsfield(pdir, c, yes=yes, resolution=res)
     send = {**c, "body": {**c["body"], "resolution": res}}
@@ -1557,14 +1564,13 @@ def finalize(pdir: Path, cid: str, take_n: int, *, yes: bool = False, dry: bool 
 def poll(pdir: Path, cids: list[str] | None = None, *, wait_s: float = 0.0, job_id: str | None = None,
          client: OpenRouter | None = None, sleep=None) -> dict:
     attached = None
-    hedra_client = client if isinstance(client, hedra.Hedra) else None
     if job_id:
         if not cids or len(cids) != 1:
             raise SlopError("--job-id attaches one job to one clip: slop clip poll CLIP --job-id JOB_ID")
         c = store.load(pdir, cids[0])
         if any(t.get("provider") == "hedra" and t.get("status") in ("unknown", "submitted", "requested", "pending")
                for t in c.get("takes", [])):
-            r = hedra.poll(pdir, c, wait_s=wait_s, job_id=job_id, client=client, sleep=sleep)
+            r = hedra.poll(pdir, c, job_id=job_id)
             return {"results": [r], "text": r["text"]}
         unk = store.unknown_take(c)
         if not unk:
@@ -1588,7 +1594,7 @@ def poll(pdir: Path, cids: list[str] | None = None, *, wait_s: float = 0.0, job_
     for c in clips:
         if any(t.get("provider") == "hedra" and t.get("status") in ("unknown", "submitted", "requested", "pending")
                for t in c.get("takes", [])):
-            r = hedra.poll(pdir, c, wait_s=wait_s, sleep=sleep, client=hedra_client)
+            r = hedra.poll(pdir, c)
             results.append(r); lines.append(r["text"]); continue
         tk = _pending_or(c)
         if not tk:

@@ -276,7 +276,7 @@ def cmd_clip_new(a) -> dict:
     pdir = _pd(a)
     r = clips.new(pdir, a.shot, a.kind, cid=a.id, t0=a.t0, t1=a.t1, song_t0=a.song_t0, duration=a.duration, start=_in(pdir, a.start),
                   frame=a.frame, style=a.style, provider=a.provider, model=a.model, resolution=a.res, force=a.force,
-                  window_mode=a.window, words=a.words)
+                  window_mode=a.window, words=a.words, aspect_ratio=a.aspect_ratio)
     return {"clip_id": r["clip"]["id"], "created": r["created"], "warnings": r.get("warnings", []), "clip": r["clip"],
             "text": r["text"]}
 
@@ -291,7 +291,7 @@ def cmd_clip_set(a) -> dict:
                          resolution=a.res, model=a.model, provider=a.provider, frame=a.frame, start=_in(pdir, a.start),
                          refs=[_in(pdir, x) for x in a.ref], clear_refs=a.clear_refs, audio=_in(pdir, a.audio),
                          audio_mode=a.audio_mode, generate_audio=ga, recut=a.recut,
-                         why=a.why, needed=[a.t0, a.t1] if (a.t0 is not None and a.t1 is not None) else None)
+                         why=a.why, aspect_ratio=a.aspect_ratio, needed=[a.t0, a.t1] if (a.t0 is not None and a.t1 is not None) else None)
     return {"clip_id": a.clip, "changed": r["changed"], "warnings": r["warnings"], "text": r["text"]}
 
 
@@ -307,7 +307,7 @@ def cmd_clip_submit(a) -> dict:
     from . import clips
     r = clips.submit(_pd(a), a.clip, provider=a.provider, yes=a.yes, resolution=a.res, no_audio_ref=a.no_audio_ref,
                      experimental_data=a.experimental_data, resubmit_unknown=a.resubmit_unknown, dry=a.dry_run,
-                     finalize_from=a.finalize_from, again=a.again, hedra_transport=a.hedra_transport,
+                     finalize_from=a.finalize_from, again=a.again,
                      hedra_cost=a.hedra_cost, hedra_currency=a.hedra_currency, quote_only=a.quote_only)
     r.pop("request", None)
     return r
@@ -528,6 +528,8 @@ def register(sub) -> None:
     p.add_argument("--window", choices=["clean", "vocal", "mix"],
                    help="@Audio1: clean vocal (sung default), raw vocal stem, or the mix (motion default)")
     p.add_argument("--provider", choices=["openrouter", "higgsfield", "hedra"]); p.add_argument("--model")
+    p.add_argument("--aspect-ratio", choices=["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+                   help="output shape; Hedra defaults to adaptive to the reference image")
     p.add_argument("--res", choices=["480p", "720p", "1080p"]); p.add_argument("--force", action="store_true")
     p.add_argument("--words", help="sung: quote only these words (her words only; the clean window holds just them)")
     p.set_defaults(func=cmd_clip_new)
@@ -541,6 +543,8 @@ def register(sub) -> None:
     p.add_argument("--t0", type=float); p.add_argument("--t1", type=float)
     p.add_argument("--res", choices=["480p", "720p", "1080p"]); p.add_argument("--model")
     p.add_argument("--provider", choices=["openrouter", "higgsfield", "hedra"]); p.add_argument("--frame", choices=["ref", "first"])
+    p.add_argument("--aspect-ratio", choices=["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+                   help="output shape; Hedra defaults to adaptive to the reference image")
     p.add_argument("--start"); p.add_argument("--ref", action="append", default=[]); p.add_argument("--clear-refs", action="store_true")
     p.add_argument("--audio", help="use this file as the window audio (e.g. the clean vocal window)")
     p.add_argument("--audio-mode", choices=["clean", "vocal", "mix"]); p.add_argument("--recut", action="store_true")
@@ -567,7 +571,6 @@ def register(sub) -> None:
                         "the owner asks; the first finalized take is kept)")
     p.add_argument("--experimental-data", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--quote-only", action="store_true", help="Hedra: upload/prepare a free quote; no generation or reservation")
-    p.add_argument("--hedra-transport", choices=["api", "mcp"], default="api", help="Hedra: direct API (default) or connector request file")
     p.add_argument("--hedra-cost", type=float, help="MCP: fresh Hedra estimate cost")
     p.add_argument("--hedra-currency", choices=["USD", "credits"], help="MCP: currency from the same estimate")
     p.set_defaults(func=cmd_clip_submit)

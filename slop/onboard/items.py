@@ -97,9 +97,9 @@ CATALOG = [
          cost="your Higgsfield credits; every video is priced before it is made (get_cost)",
          unlocks="Higgsfield video: Seedance 2.5 sung clips (copies the vocals more reliably on stubborn windows), "
                  "Kling, Veo and more on your credits"),
-    dict(id="hedra", group="connectors", title="Hedra (API or MCP)", kind="record", need="ooo",
-         cost="Hedra live estimate: API USD wallet or MCP USD/credits; separate caps",
-         unlocks="Seedance 2.5 sung and motion clips via --provider hedra; choose --hedra-transport api|mcp"),
+    dict(id="hedra", group="connectors", title="Hedra MCP connector", kind="record", need="ooo",
+         cost="Hedra MCP live estimate in USD or credits; separate caps",
+         unlocks="Seedance 2.5 sung and motion clips via --provider hedra through the MCP connector"),
     dict(id="drive", group="connectors", title="Google Drive connector", kind="record", need="ooo",
          cost="free", unlocks="Finished videos and big files sent to you as links in your own Google Drive (big "
                                "videos often fail as chat attachments)"),
@@ -331,7 +331,7 @@ def _newest(ctx: Ctx) -> dict | None:
 def route_ok(ctx: Ctx, rid: str) -> bool:
     """OpenRouter: a valid (or, offline, present) key. Higgsfield: HIGGSFIELD_API_KEY or the connector recorded."""
     if rid == "hedra":
-        return bool((ctx.env or {}).get("HEDRA_API_KEY")) or (_mark(ctx, "hedra") or {}).get("state") == "done"
+        return (_mark(ctx, "hedra") or {}).get("state") == "done"
     if rid == "openrouter":
         return key_ok(ctx)
     return bool((ctx.env or {}).get("HIGGSFIELD_API_KEY")) or (_mark(ctx, "higgsfield") or {}).get("state") == "done"
@@ -708,8 +708,6 @@ def _higgsfield(ctx: Ctx) -> dict:
 
 
 def _hedra(ctx: Ctx) -> dict:
-    if (ctx.env or {}).get("HEDRA_API_KEY"):
-        return {"raw": "done", "why": "HEDRA_API_KEY is set (API transport; key not verified)"}
     return _connector(ctx, "hedra", "Hedra (https://hedra.com/mcp)", "call get_model for seedance-25; when it answers, ")
 
 
@@ -859,7 +857,7 @@ def _api_images(ctx: Ctx) -> dict:
 def _video(ctx: Ctx) -> dict:
     if route_ok(ctx, "hedra"):
         return {"raw": "done", "data": {"via": _vias(ctx) + ["Hedra"]},
-                "why": "Hedra Seedance 2.5 clips: --provider hedra --hedra-transport api|mcp; measure sung lip sync"}
+                "why": "Hedra Seedance 2.5 clips: --provider hedra (MCP); measure sung lip sync"}
     via = _vias(ctx)
     if len(via) == 2:
         return _free_tier_warn(ctx, {"raw": "done", "data": {"via": via},

@@ -1,8 +1,6 @@
-"""Seedance 2.5 clips through Hedra v3 or the Hedra MCP connector.
+"""Seedance 2.5 clips through the Hedra MCP connector.
 
-The two transports share a request builder and the clip/ledger lifecycle. MCP tools
-are executed by the bot, never by this CLI. No price or credit conversion is guessed.
-API contract: https://www.hedra.com/docs/pages/developer/v3/quickstart
+MCP tools are executed by Grok, never by this CLI. No price or credit conversion is guessed.
 MCP contract: https://hedra.com/mcp (tool schemas checked 2026-10-14).
 """
 from __future__ import annotations
@@ -10,71 +8,15 @@ from __future__ import annotations
 import copy
 import json
 import math
-import time
 import uuid
 from pathlib import Path
-from urllib.parse import quote
 
 from .. import ledger
-from ..config import SlopError, require_env
+from ..config import SlopError
 from . import store, higgsfield
 
 MODEL = "seedance-25"
-BASE = "https://api.hedra.com/v3"
-
-
-class HedraError(SlopError):
-    def __init__(self, message, *, unknown=False):
-        super().__init__(message)
-        self.unknown = unknown
-
-
-class Hedra:
-    def __init__(self, *, session=None, key=None):
-        self.session = session
-        self._key = key
-
-    def request(self, method, path, *, paid=False, **kwargs):
-        import requests
-        key = self._key or require_env("HEDRA_API_KEY", "needed for Hedra API transport")
-        if self.session is None:
-            self.session = requests.Session()
-        try:
-            r = self.session.request(method, BASE + path, headers={"Authorization": "Key " + key},
-                                     timeout=60, allow_redirects=False, **kwargs)
-        except requests.RequestException as e:
-            # Do not print exception bodies/URLs: they can contain credentials.
-            raise HedraError(f"Hedra network error ({type(e).__name__}); " +
-                             ("outcome unknown: do not submit again; locate the job and attach its id" if paid
-                              else "retry this free operation"), unknown=paid) from None
-        if not 200 <= r.status_code < 300:
-            raise HedraError(f"Hedra HTTP {r.status_code}; check the account/job in the Hedra dashboard",
-                             unknown=paid and (r.status_code >= 500 or r.status_code in (408, 409)))
-        try:
-            value = r.json()
-            if not isinstance(value, dict):
-                raise ValueError()
-            return value
-        except ValueError:
-            raise HedraError("Hedra returned an invalid response", unknown=paid) from None
-
-    def upload(self, path):
-        with Path(path).open("rb") as f:
-            r = self.request("POST", "/files", files={"file": (Path(path).name, f)})
-        url = r.get("url")
-        if not isinstance(url, str) or not url.startswith("https://"):
-            raise SlopError("Hedra upload returned no HTTPS file handle")
-        return url
-
-    def estimate(self, body):
-        return self.request("POST", f"/models/{MODEL}/estimate", json={"input": body})
-
-    def submit(self, body, key):
-        return self.request("POST", f"/models/{MODEL}", paid=True,
-                            json={"input": body, "idempotency_key": key})
-
-    def get(self, job_id):
-        return self.request("GET", "/jobs/" + quote(job_id, safe=""))
+ASPECTS = ("1:1", "3:4", "4:3", "16:9", "21:9", "9:16", "adaptive")
 
 
 def price(cost, currency):
@@ -90,7 +32,7 @@ def price(cost, currency):
 
 
 def build(pdir, c, *, resolution=None, no_audio_ref=False):
-    """Return raw v3 input, MCP named arguments, and local uploads. No I/O to providers."""
+    """Return MCP named arguments and local uploads. No I/O to providers."""
     from . import clips
     b = c["body"]
     model = c.get("model") or MODEL
@@ -101,7 +43,7 @@ def build(pdir, c, *, resolution=None, no_audio_ref=False):
     if not dur.is_integer() or not 4 <= dur <= 30 or res not in ("480p", "720p", "1080p"):
         raise SlopError("Hedra Seedance 2.5 needs integer 4–30 s and 480p, 720p or 1080p")
     aspect = b.get("aspect_ratio") or "16:9"
-    if aspect not in ("1:1", "3:4", "4:3", "16:9", "21:9", "9:16", "adaptive"):
+    if aspect not in ASPECTS:
         raise SlopError("unsupported Hedra aspect ratio")
     first = c.get("frame") == "first"
     if c.get("kind") == "sung" and (no_audio_ref or first or b.get("generate_audio") is False):
@@ -124,141 +66,109 @@ def build(pdir, c, *, resolution=None, no_audio_ref=False):
         if src.stat().st_size > limit:
             raise SlopError(f"Hedra {key} exceeds the {kind} file size limit")
         ph = f"<<HEDRA_UPLOAD:{key}>>"
-        field = "start_image" if key == "start" and first else {"image": "images", "video": "videos", "audio": "audios"}[kind]
-        arg = "start_keyframe_url" if field == "start_image" else f"reference_{kind}_urls"
-        ref = {"source": "url", "url": ph}
-        if field == "start_image":
-            body[field] = ref; args[arg] = ph
+        arg = "start_keyframe_url" if key == "start" and first else f"reference_{kind}_urls"
+        if arg == "start_keyframe_url":
+            args[arg] = ph
         else:
-            body.setdefault(field, []).append(ref); args.setdefault(arg, []).append(ph)
+            args.setdefault(arg, []).append(ph)
         hosted = (c.get("hosted") or {}).get(key) or {}
         source_url = higgsfield.upload_method(hosted, src).get("https_url")
         uploads.append({"key": key, "file": str(src), "placeholder": ph, "source_url": source_url,
                         "sha1": store.file_sha1(src), "tool": "upload_file"})
-    if c.get("kind") == "sung" and not body.get("audios"):
+    if c.get("kind") == "sung" and not args.get("reference_audio_urls"):
         raise SlopError("Hedra sung clips need their audio window")
-    if len(body.get("images", [])) > 30 or len(body.get("videos", [])) > 10:
+    if len(args.get("reference_image_urls", [])) > 30 or len(args.get("reference_video_urls", [])) > 10:
         raise SlopError("Hedra accepts at most 30 reference images and 10 reference videos")
-    return {"input": body, "request": args, "uploads": uploads}
+    return {"request": args, "uploads": uploads}
 
 
-def replace_uploads(value, urls):
-    if isinstance(value, dict):
-        return {k: replace_uploads(v, urls) for k, v in value.items()}
-    if isinstance(value, list):
-        return [replace_uploads(v, urls) for v in value]
-    return urls.get(value, value) if isinstance(value, str) else value
-
-
-def dry_run(pdir, c, *, transport, resolution=None, no_audio_ref=False):
+def dry_run(pdir, c, *, resolution=None, no_audio_ref=False):
     from . import clips
     req = build(pdir, c, resolution=resolution, no_audio_ref=no_audio_ref)
     problems = clips.lock_problems(pdir, c)
     if c.get("status") == "submitted":
         problems.append("a take is already in flight")
-    return {"dry_run": True, "clip": c["id"], "provider": "hedra", "transport": transport,
-            "would_send": req["input"], "mcp_request": req["request"], "uploads": req["uploads"],
+    missing = [u["key"] for u in req["uploads"] if not u["source_url"]]
+    return {"upload_problems": missing, "ready_to_upload": not missing, "dry_run": True, "clip": c["id"], "provider": "hedra", "transport": "mcp",
+            "would_send": req["request"], "mcp_request": req["request"], "uploads": req["uploads"],
             "lock_problems": problems, "estimate": {"generation_tool": "generate_video", "input": req["request"]},
-            "text": f"{c['id']}: Hedra {MODEL} via {transport}; no uploads or paid calls. "
+            "text": f"{c['id']}: Hedra {MODEL} via MCP; no uploads or paid calls. "
                     "Price comes from Hedra's estimate, in its returned currency. "
+                    + ("Missing public upload URLs: " + ", ".join(missing) + ". " if missing else "")
                     + ("Before submit: " + "; ".join(problems) if problems else
-                       "API: submit with --yes to upload, quote and check the budget. MCP: upload the files, "
+                       "Use --quote-only, upload the files with the connector, "
                        "replace placeholders, estimate generation_tool=generate_video, then submit with "
                        "--hedra-cost COST --hedra-currency USD|credits --yes.")}
 
 
-def submit(pdir, c, *, transport, yes, resolution=None, no_audio_ref=False, cost=None, currency=None, client=None,
-           quote_only=False):
+def submit(pdir, c, *, yes, resolution=None, no_audio_ref=False, cost=None, currency=None, quote_only=False):
     from . import clips
-    req = build(pdir, c, resolution=resolution, no_audio_ref=no_audio_ref)
+    # Validate before exposing files through the tunnel.
+    build(pdir, c, resolution=resolution, no_audio_ref=no_audio_ref)
     if not quote_only:
         ledger.assert_spend_allowed("hedra", pdir)
-    if transport == "api":
-        if cost is not None or currency is not None:
-            raise SlopError("API transport obtains its own live estimate; omit --hedra-cost/--hedra-currency")
-        client = client or Hedra()
-        urls = {u["placeholder"]: client.upload(u["file"]) for u in req["uploads"]}
-        req["input"] = replace_uploads(req["input"], urls)
-        est = client.estimate(req["input"])
-        cost, currency = price(est.get("cost"), est.get("currency"))
-        if currency != "USD":
-            raise SlopError("Hedra API estimate must be in USD")
-    else:
-        clips.auto_host(pdir, c)
-        req = build(pdir, c, resolution=resolution, no_audio_ref=no_audio_ref)
-        if quote_only:
-            path = store.clip_folder(pdir, c["id"]) / "hedra-preflight.json"
-            req["estimate"] = {"generation_tool": "generate_video", "input": req["request"]}
-            path.write_text(json.dumps(req, indent=2) + "\n")
-            store.save(pdir, c)  # retain source URLs only; no take or spend reservation
-            return {"clip": c["id"], "request_file": str(path), "quote_only": True,
-                    "text": f"{c['id']}: wrote {path}. Upload its source URLs with Hedra upload_file, replace "
-                    "placeholders with file.url, then call estimate. No generation or spend reservation. "
-                    "Submit with --hedra-transport mcp --hedra-cost COST --hedra-currency USD|credits --yes."}
         cost, currency = price(cost, currency)
+    clips.auto_host(pdir, c)
+    req = build(pdir, c, resolution=resolution, no_audio_ref=no_audio_ref)
+    missing = [u for u in req["uploads"] if not u["source_url"]]
+    if missing:
+        details = "; ".join(f"{u['key']}: {u['file']}" for u in missing)
+        raise SlopError("Hedra cannot upload: missing public HTTPS URLs for " + details + ". "
+                        "Start and verify a reachable tunnel, or use an owner-approved public host and record "
+                        "the exact files with slop gen host CLIP --role start|audio --url URL. "
+                        "No quote request or spend reservation was created.")
     if quote_only:
-        return {"clip": c["id"], "cost": cost, "currency": currency, "quote_only": True,
-                "text": f"{c['id']}: Hedra quote {cost:g} {currency}; no generation submitted. "
-                "Set budget.hedra_usd to the approved total, then submit with --yes (the price is checked again)."}
+        path = store.clip_folder(pdir, c["id"]) / "hedra-preflight.json"
+        req["estimate"] = {"generation_tool": "generate_video", "input": req["request"]}
+        path.write_text(json.dumps(req, indent=2) + "\n")
+        store.save(pdir, c)  # retain source URLs only; no take or spend reservation
+        return {"clip": c["id"], "request_file": str(path), "quote_only": True,
+                "text": f"{c['id']}: wrote {path}. Upload its source URLs with Hedra upload_file, replace "
+                "placeholders with file.url, then call estimate. No generation or spend reservation. "
+                "Submit with --hedra-cost COST --hedra-currency USD|credits --yes."}
     usd, cr = (cost, None) if currency == "USD" else (0, cost)
     ledger.check_budget(pdir, "hedra", add_usd=usd, add_credits=cr or 0, yes=yes)
     key = str(uuid.uuid4())
-    tk = clips._new_take(c, provider="hedra", transport=transport, model=MODEL, id=None,
-                         status="unknown" if transport == "api" else "requested", est_usd=usd,
+    tk = clips._new_take(c, provider="hedra", transport="mcp", model=MODEL, id=None,
+                         status="requested", est_usd=usd,
                          credits_est=cr, currency=currency, idempotency_key=key,
-                         body=copy.deepcopy(req["input"]), ref_audio=store.rel(pdir, clips.window_src(pdir, c)))
+                         body=copy.deepcopy(req["request"]), ref_audio=store.rel(pdir, clips.window_src(pdir, c)))
     c["provider"] = "hedra"
     c["status"] = "submitted"
-    store.save(pdir, c)  # durable before the paid POST; a crash cannot silently repeat it
+    store.save(pdir, c)  # durable before the connector is instructed to generate
     ledger.record(pdir, provider="hedra", model=MODEL, kind="video", est_usd=usd, credits=cr,
-                  units={"clip": c["id"], "take": tk["n"]}, note=f"Hedra {transport} estimate ({currency})")
-    if transport == "mcp":
-        req["request"]["idempotency_key"] = key
-        req.update(provider="hedra", transport="mcp", cost=cost, currency=currency,
-                   estimate={"generation_tool": "generate_video", "input": req["request"]})
-        cid = c["id"]
-        req["how_to_run"] = [
-            "Use the Hedra connector at https://hedra.com/mcp. get_balance: show both wallets and billing_mode. "
-            "Do not switch billing mode or workspace without the owner's instruction.",
-            "For every upload, call upload_file {url: source_url}; if missing, start the tunnel and host the local "
-            "file first. Verify the file sha1. Replace placeholders with the returned file.url in request and estimate. "
-            "Reuse the handles from the preflight estimate while unexpired; otherwise upload and estimate again.",
-            f"Call estimate with generation_tool=generate_video and input=request. Require cost={cost:g} and "
-            f"currency={currency}; if either changed, do not generate: record --failed 'rejected: quote changed' "
-            f"{'--cost-usd' if currency == 'USD' else '--credits'} 0 for this unsubmitted take, "
-            "then obtain a new reservation with the new quote.",
-            "Call generate_video with request exactly as written, including idempotency_key. A timeout has an "
-            "unknown outcome: do not create a new request or mark failed. Recover the job in Hedra; keep the reservation.",
-            f"Record job.job_id immediately: slop clip ingest {cid} --provider hedra --pending --job-id JOB_ID.",
-            "Poll get_generations {job_ids:[JOB_ID], wait_seconds:20}; follow poll_after_seconds. Never regenerate to poll.",
-            f"COMPLETED: slop clip ingest {cid} --provider hedra --url OUTPUT_URL --job-id JOB_ID. "
-            "Record net cost when known with --cost-usd N or --credits N, matching the quoted currency.",
-            f"FAILED: slop clip ingest {cid} --provider hedra --failed REASON. Retain the estimate unless the provider "
-            "confirms the net cost: pass --cost-usd N or --credits N (0 for a confirmed full refund). "
-            "An explicit rejection before a job exists may use a confirmed zero cost.",
-            f"For sung clips, measure the delivered take with slop clip sync {cid} before using it in the edit.",
-        ]
-        path = store.clip_folder(pdir, cid) / f"hedra-take-{tk['n']}-request.json"
-        path.write_text(json.dumps(req, indent=2) + "\n")
-        tk["request_file"] = store.rel(pdir, path)
-        store.save(pdir, c)
-        return {"clip": cid, "take": tk["n"], "request_file": str(path), "cost": cost, "currency": currency,
-                "text": f"{cid}: reserved {cost:g} {currency}; run the Hedra MCP steps in {path}, then ingest the result."}
-    try:
-        ack = client.submit(req["input"], key)
-        if not isinstance(ack.get("job_id"), str) or not ack["job_id"]:
-            raise HedraError("Hedra returned no job id; outcome unknown", unknown=True)
-    except HedraError as e:
-        if not e.unknown:
-            tk["status"] = "failed"; c["status"] = "locked"
-            ledger.settle(pdir, provider="hedra", clip=c["id"], take=tk["n"], note="submit rejected")
-        tk["error"] = str(e)
-        store.save(pdir, c)
-        raise
-    tk.update(id=ack["job_id"], status="submitted")
+                  units={"clip": c["id"], "take": tk["n"]}, note=f"Hedra MCP estimate ({currency})")
+    req["request"]["idempotency_key"] = key
+    req.update(provider="hedra", transport="mcp", cost=cost, currency=currency,
+               estimate={"generation_tool": "generate_video", "input": req["request"]})
+    cid = c["id"]
+    req["how_to_run"] = [
+        "Use the Hedra connector at https://hedra.com/mcp. get_balance: show both wallets and billing_mode. "
+        "Do not switch billing mode or workspace without the owner's instruction.",
+        "For every upload, call upload_file {url: source_url}; if missing, start the tunnel and host the local "
+        "file first. Verify the file sha1. Replace placeholders with the returned file.url in request and estimate. "
+        "Reuse the handles from the preflight estimate while unexpired; otherwise upload and estimate again.",
+        f"Call estimate with generation_tool=generate_video and input=request. Require cost={cost:g} and "
+        f"currency={currency}; if either changed, do not generate: record --failed 'rejected: quote changed' "
+        f"{'--cost-usd' if currency == 'USD' else '--credits'} 0 for this unsubmitted take, "
+        "then obtain a new reservation with the new quote.",
+        "Call generate_video with request exactly as written, including idempotency_key. A timeout has an "
+        "unknown outcome: do not create a new request or mark failed. Recover the job in Hedra; keep the reservation.",
+        f"Record job.job_id immediately: slop clip ingest {cid} --provider hedra --pending --job-id JOB_ID.",
+        "Poll get_generations {job_ids:[JOB_ID], wait_seconds:20}; follow poll_after_seconds. Never regenerate to poll.",
+        f"COMPLETED: slop clip ingest {cid} --provider hedra --url OUTPUT_URL --job-id JOB_ID. "
+        "Record net cost when known with --cost-usd N or --credits N, matching the quoted currency.",
+        f"FAILED: slop clip ingest {cid} --provider hedra --failed REASON. Retain the estimate unless the provider "
+        "confirms the net cost: pass --cost-usd N or --credits N (0 for a confirmed full refund). "
+        "An explicit rejection before a job exists may use a confirmed zero cost.",
+        f"For sung clips, measure the delivered take with slop clip sync {cid} before using it in the edit.",
+    ]
+    path = store.clip_folder(pdir, cid) / f"hedra-take-{tk['n']}-request.json"
+    path.write_text(json.dumps(req, indent=2) + "\n")
+    tk["request_file"] = store.rel(pdir, path)
     store.save(pdir, c)
-    return {"clip": c["id"], "take": tk["n"], "job": tk["id"], "cost": cost, "currency": currency,
-            "text": f"{c['id']}: Hedra job {tk['id']} submitted (~${cost:.4f}); slop clip poll {c['id']}"}
+    return {"clip": cid, "take": tk["n"], "request_file": str(path), "cost": cost, "currency": currency,
+            "text": f"{cid}: reserved {cost:g} {currency}; run the Hedra MCP steps in {path}, then ingest the result."}
 
 
 def settle_cost(pdir, c, tk, *, cost=None, currency=None):
@@ -302,7 +212,8 @@ def ingest(pdir, c, *, file=None, url=None, job_id=None, credits=None, cost_usd=
     if tk.get("status") in ("delivered", "failed", "declined"):
         settle_cost(pdir, c, tk, cost=cost, currency=currency)
         store.save(pdir, c)
-        return {"clip": c["id"], "take": tk["n"], "text": f"{c['id']}: take already {tk['status']}"}
+        return {"clip": c["id"], "take": tk["n"], "file": tk.get("file"),
+                "text": f"{c['id']}: take already {tk['status']}"}
     if pending:
         if not job_id:
             raise SlopError("--pending needs --job-id")
@@ -317,7 +228,7 @@ def ingest(pdir, c, *, file=None, url=None, job_id=None, credits=None, cost_usd=
             raise SlopError("Hedra ingest needs --file/--url, --pending, or --failed/--declined")
         out = store.take_path(pdir, c["id"], tk["n"])
         if url:
-            higgsfield.fetch_result(url, out, session=session)  # public URL: never send the API credential
+            higgsfield.fetch_result(url, out, session=session)  # public result URL, no connector credentials
         else:
             higgsfield.copy_file(Path(file), out)
         duration = clips.probe_duration(out)
@@ -333,7 +244,7 @@ def ingest(pdir, c, *, file=None, url=None, job_id=None, credits=None, cost_usd=
             "text": f"{c['id']}: Hedra take {tk['n']} {tk['status']}" + nxt}
 
 
-def poll(pdir, c, *, wait_s=0, job_id=None, client=None, sleep=None):
+def poll(pdir, c, *, job_id=None):
     tk = next((t for t in reversed(c.get("takes", [])) if t.get("provider") == "hedra"
                and t.get("status") in ("unknown", "submitted", "requested", "pending")), None)
     if not tk:
@@ -342,34 +253,9 @@ def poll(pdir, c, *, wait_s=0, job_id=None, client=None, sleep=None):
         if tk.get("id") and tk["id"] != job_id:
             raise SlopError("job id does not match the Hedra take")
         tk.update(id=job_id, status="pending"); store.save(pdir, c)
-    if tk["transport"] == "mcp":
-        if not tk.get("id"):
-            return {"clip": c["id"], "text": f"{c['id']}: read {tk.get('request_file')}; if generation was already "
-                    "attempted, recover its job id without resubmitting. Record it with clip ingest "
-                    f"{c['id']} --provider hedra --pending --job-id JOB_ID, then poll with get_generations."}
-        return {"clip": c["id"], "text": f"{c['id']}: use Hedra get_generations with job_ids "
-                f"[{tk.get('id')!r}], wait_seconds:20; follow poll_after_seconds, then clip ingest"}
     if not tk.get("id"):
-        raise SlopError(f"{c['id']}: outcome unknown; locate the job in Hedra, then clip poll {c['id']} --job-id ID")
-    client = client or Hedra()
-    deadline = time.monotonic() + max(0, wait_s)
-    while True:
-        r = client.get(tk["id"])
-        state = r.get("status")
-        kw = {}
-        if r.get("cost") is not None:
-            cost, currency = price(r["cost"], r.get("currency"))
-            kw["cost_usd" if currency == "USD" else "credits"] = cost
-        if state == "COMPLETED":
-            outputs = r.get("outputs") or []
-            out = next((x for x in outputs if x.get("status", "COMPLETED") == "COMPLETED"
-                        and x.get("url") and str(x.get("content_type") or "").startswith("video/")), None)
-            if not out:
-                raise SlopError("Hedra completed without a retrievable video; keep the job id and check its outputs")
-            return ingest(pdir, c, url=out["url"], job_id=tk["id"], **kw)
-        if state == "FAILED":
-            code = (r.get("error") or {}).get("code") or "FAILED"
-            return ingest(pdir, c, failed=f"Hedra job failed ({code}); inspect the job in Hedra", **kw)
-        if time.monotonic() >= deadline:
-            return {"clip": c["id"], "status": state, "text": f"{c['id']}: Hedra {state}; clip poll {c['id']}"}
-        (sleep or time.sleep)(min(5, max(0, deadline - time.monotonic())))
+        return {"clip": c["id"], "text": f"{c['id']}: read {tk.get('request_file')}; if generation was already "
+                "attempted, recover its job id without resubmitting. Record it with clip ingest "
+                f"{c['id']} --provider hedra --pending --job-id JOB_ID, then poll with get_generations."}
+    return {"clip": c["id"], "text": f"{c['id']}: use Hedra get_generations with job_ids "
+            f"[{tk.get('id')!r}], wait_seconds:20; follow poll_after_seconds, then clip ingest"}

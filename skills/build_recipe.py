@@ -37,7 +37,7 @@ ROOT = SKILLS_DIR.parent
 DIST = SKILLS_DIR / "dist" / "recipe.json"
 
 # the Grok side: sign-ins and delegation only (Opus on the box is the production)
-ORDER = ["claudia-welcome", "claudia-setup", "claudia-relay", "grok-imagine", "midjourney", "suno", "drive",
+ORDER = ["claudia-welcome", "claudia-setup", "claudia-relay", "hedra", "grok-imagine", "midjourney", "suno", "drive",
          "setup-accounts", "setup-agents", "claudia-toolkit"]
 # kept in the repository, not shipped yet: the home-GPU link waits for the relay (the bot's computer cannot open a
 # quick tunnel); the checklist offers it only with SLOP_GPU_LINK=1

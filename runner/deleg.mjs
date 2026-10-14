@@ -118,7 +118,7 @@ const CLAUDE_SPEND_TOOLS = ['mcp__claude_ai_Higgsfield'];   // claude.ai connect
 const BILLING_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK',
   'CLAUDE_CODE_USE_VERTEX', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL', 'META_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'];
 // The toolkit's own secrets: a worker never inherits them unless job.json "pass_env" names them.
-const SECRET_ENV = ['OPENROUTER_API_KEY', 'HIGGSFIELD_API_KEY', 'HEDRA_API_KEY', 'ARENA_TOKEN'];
+const SECRET_ENV = ['OPENROUTER_API_KEY', 'HIGGSFIELD_API_KEY', 'ARENA_TOKEN'];
 // One engine's sign-in token never reaches another vendor's agent (it may run shell commands and read the env).
 const ENGINE_SIGNIN_ENV = { CLAUDE_CODE_OAUTH_TOKEN: 'claude' };
 // One-time sign-in codes from the secure card: typed into the waiting login only, never handed to a job.

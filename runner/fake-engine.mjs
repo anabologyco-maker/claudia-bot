@@ -36,7 +36,7 @@ scenario = process.env.FAKE_SCENARIO || scenario;
 const REPLY = process.env.FAKE_REPLY || null;
 const JOB = process.env.SLOP_JOB_DIR || process.cwd();
 const WATCH = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'META_API_KEY',
-  'OPENROUTER_API_KEY', 'HIGGSFIELD_API_KEY', 'HEDRA_API_KEY', 'ARENA_TOKEN', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID',
+  'OPENROUTER_API_KEY', 'HIGGSFIELD_API_KEY', 'ARENA_TOKEN', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID',
   'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_LOGIN_CODE', 'GEMINI_LOGIN_CODE', 'DISABLE_AUTOUPDATER'];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const emit = async o => { process.stdout.write(JSON.stringify(o) + '\n'); await sleep(step); };

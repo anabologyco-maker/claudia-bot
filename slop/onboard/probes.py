@@ -149,7 +149,7 @@ def openrouter(offline: bool = False) -> dict:
 
 def env_names() -> dict:
     """Presence of the optional secrets, by NAME only."""
-    return {n: util.env_present(n) for n in ("ARENA_TOKEN", "HIGGSFIELD_API_KEY", "HEDRA_API_KEY", "GEMINI_API_KEY",
+    return {n: util.env_present(n) for n in ("ARENA_TOKEN", "HIGGSFIELD_API_KEY", "GEMINI_API_KEY",
                                               "CLAUDE_CODE_OAUTH_TOKEN")}
 
 

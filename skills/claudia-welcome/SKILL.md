@@ -5,7 +5,7 @@ description: Use when the bot opens for the first time after the template import
 
 # Claudia welcome - always the first message
 
-No install, no sign-in and no account question in this reply. One silent check first: `ls /home/box/sand-data/workflows` must list all 10: claudia-welcome claudia-setup claudia-relay grok-imagine midjourney suno drive setup-accounts setup-agents claudia-toolkit. One missing: recreate it from the template context, else ask for a re-import.
+No install, no sign-in and no account question in this reply. One silent check first: `ls /home/box/sand-data/workflows` must list all 11: claudia-welcome claudia-setup claudia-relay hedra grok-imagine midjourney suno drive setup-accounts setup-agents claudia-toolkit. One missing: recreate it from the template context, else ask for a re-import.
 
 Then send this message as written (prices are monthly and approximate):
 

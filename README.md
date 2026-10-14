@@ -77,15 +77,17 @@ Higgsfield connector is used instead), `ARENA_TOKEN` (Are.na taste import). Codi
 (`CLAUDE_LOGIN_CODE`, `CLAUDE_CODE_OAUTH_TOKEN`, `GEMINI_LOGIN_CODE`, `GEMINI_API_KEY`) go through the same card
 (`docs/96-setup-and-hardware.md` §3).
 
-## Hedra video generation (API or MCP)
+## Hedra video generation (MCP)
 
-Use `--provider hedra` for Seedance 2.5 sung or motion clips. Choose direct API with
-`clip submit CLIP --hedra-transport api` (default; `HEDRA_API_KEY`) or the
-[Hedra MCP connector](https://hedra.com/mcp) with `--hedra-transport mcp` (no API key).
-`--quote-only` prepares a free estimate before generation. Separate `budget.hedra_usd` and
-`budget.hedra_credits` caps preserve the quote's billing unit.
-See [Hedra setup, commands and Grok Bot smoke test](docs/63-hedra.md). Image/song generation and
-existing provider defaults are unchanged. Live generation and lip-sync quality need the documented smoke test.
+Use `--provider hedra` for Seedance 2.5 sung or motion clips through the
+[Hedra MCP connector](https://hedra.com/mcp), connected in Grok. No Hedra API key is needed.
+The production posts a `relay job --kind hedra --what quote --clip CLIP`, gets the owner's approval,
+then reserves the quote and posts a `--what generate` job. Grok uploads, estimates, generates and polls;
+completion ingests the video and wakes production. Separate `budget.hedra_usd` and
+`budget.hedra_credits` caps preserve the quoted unit. See
+[Hedra setup, commands and Grok Bot smoke test](docs/63-hedra.md).
+Image/song generation and existing provider defaults are unchanged. Live generation and lip-sync
+quality still need the documented smoke test.
 
 ## Quickstart (Quick tier)
 
@@ -222,10 +224,10 @@ or after the command name; the documented form is `slop --json --project NAME <c
 | `slop gen song [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--clip] [--model MODEL] [--seed SEED] [--as-song] [--yes]` | generate a song with Lyria via OpenRouter (~$0.08; --clip 30 s ~$0.04) |
 | `slop gen host CLIP [--url URL] [--media-id MEDIA_ID] [--role audio\|start] [--tunnel] [--no-verify] [--data-uri] [--experimental]` | give a clip's window (or start image) an HTTPS URL for OpenRouter / Higgsfield media_import_url, or record a media_id |
 | `slop gen tunnel start\|stop\|status [--no-verify] [--verify]` | Cloudflare quick tunnel for HTTPS hosting (start\|stop\|status) |
-| `slop clip new SHOT --kind sung\|motion [--id ID] [--t0 T0] [--t1 T1] [--song-t0 SONG_T0] [--duration DURATION] [--start START] [--frame ref\|first] [--style screenplay\|short] [--window clean\|vocal\|mix] [--provider openrouter\|higgsfield\|hedra] [--model MODEL] [--res 480p\|720p\|1080p] [--force] [--words WORDS]` | draft clips/<id>.json for a storyboard shot (window, exact words, prompt scaffold) |
-| `slop clip set CLIP [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--requote] [--words WORDS] [--duration DURATION] [--song-t0 SONG_T0] [--t0 T0] [--t1 T1] [--res 480p\|720p\|1080p] [--model MODEL] [--provider openrouter\|higgsfield\|hedra] [--frame ref\|first] [--start START] [--ref REF] [--clear-refs] [--audio AUDIO] [--audio-mode clean\|vocal\|mix] [--recut] [--no-audio] [--audio-on] [--why WHY]` | change a clip (back to draft; re-lock after) |
+| `slop clip new SHOT --kind sung\|motion [--id ID] [--t0 T0] [--t1 T1] [--song-t0 SONG_T0] [--duration DURATION] [--start START] [--frame ref\|first] [--style screenplay\|short] [--window clean\|vocal\|mix] [--provider openrouter\|higgsfield\|hedra] [--model MODEL] [--aspect-ratio 16:9\|9:16\|1:1\|4:3\|3:4\|21:9\|adaptive] [--res 480p\|720p\|1080p] [--force] [--words WORDS]` | draft clips/<id>.json for a storyboard shot (window, exact words, prompt scaffold) |
+| `slop clip set CLIP [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--requote] [--words WORDS] [--duration DURATION] [--song-t0 SONG_T0] [--t0 T0] [--t1 T1] [--res 480p\|720p\|1080p] [--model MODEL] [--provider openrouter\|higgsfield\|hedra] [--frame ref\|first] [--aspect-ratio 16:9\|9:16\|1:1\|4:3\|3:4\|21:9\|adaptive] [--start START] [--ref REF] [--clear-refs] [--audio AUDIO] [--audio-mode clean\|vocal\|mix] [--recut] [--no-audio] [--audio-on] [--why WHY]` | change a clip (back to draft; re-lock after) |
 | `slop clip lock CLIP` | draft -> locked (checks: start, window, no [[slots]], exact quoted words) |
-| `slop clip submit CLIP [--provider openrouter\|higgsfield\|hedra] [--yes] [--res 480p\|720p\|1080p] [--no-audio-ref] [--resubmit-unknown] [--dry-run] [--finalize-from TAKE] [--again] [--quote-only] [--hedra-transport api\|mcp] [--hedra-cost HEDRA_COST] [--hedra-currency USD\|credits]` | spend: OpenRouter job, or the Higgsfield request file for the bot (locked + --yes) |
+| `slop clip submit CLIP [--provider openrouter\|higgsfield\|hedra] [--yes] [--res 480p\|720p\|1080p] [--no-audio-ref] [--resubmit-unknown] [--dry-run] [--finalize-from TAKE] [--again] [--quote-only] [--hedra-cost HEDRA_COST] [--hedra-currency USD\|credits]` | spend: OpenRouter job, or the Higgsfield request file for the bot (locked + --yes) |
 | `slop clip poll [CLIP] [--wait WAIT] [--job-id JOB_ID]` | check OpenRouter jobs (all in flight when no CLIP); download completed takes |
 | `slop clip ingest CLIP [--file FILE] [--url URL] [--job-id JOB_ID] [--credits CREDITS] [--provider higgsfield\|openrouter\|hedra\|manual] [--pending] [--failed FAILED] [--declined DECLINED] [--cost-usd COST_USD]` | add a take from a file or a result URL (Higgsfield), or mark a request pending/failed |
 | `slop clip sync CLIP [--take TAKE] [--no-png]` | measure lip sync of a take (avsync) -> take.sync + PNG |
@@ -341,7 +343,8 @@ or after the command name; the documented form is `slop --json --project NAME <c
 | `slop relay fail JOB --reason REASON [--declined]` | (Grok) a job could not be done: mark it failed (--declined: the service refused it) |
 | `slop relay say TEXT [--show FILE] [--as-is]` | (the production) post a message for the director, with files to show |
 | `slop relay ask TEXT [--default DEFAULT] [--show FILE] [--as-is]` | (the production) ask the director one question, with its default |
-| `slop relay job --kind grok-imagine\|midjourney\|suno\|browser\|person [--what WHAT] [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--image IMAGE] [--aspect 16:9\|9:16\|1:1\|2:3\|3:2] [--seconds SECONDS] [--save SAVE] [--name NAME] [--note NOTE] [--text TEXT] [--title TITLE] [--style STYLE] [--lyrics LYRICS] [--lyrics-file LYRICS_FILE] [--exclude EXCLUDE] [--instrumental] [--url URL] [--plate PLATE] [--personalize on\|off] [--expect EXPECT]` | (the production) ask Grok for browser work, all of it in Grok's own signed-in browser (--kind grok-imagine \| midjourney \| suno \| browser); --kind person only for what only a person can do |
+| `slop relay job --kind grok-imagine\|midjourney\|suno\|browser\|person\|hedra [--what WHAT] [--clip CLIP] [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--image IMAGE] [--aspect 16:9\|9:16\|1:1\|2:3\|3:2] [--seconds SECONDS] [--save SAVE] [--name NAME] [--note NOTE] [--text TEXT] [--title TITLE] [--style STYLE] [--lyrics LYRICS] [--lyrics-file LYRICS_FILE] [--exclude EXCLUDE] [--instrumental] [--url URL] [--plate PLATE] [--personalize on\|off] [--expect EXPECT]` | (the production) ask Grok for browser work, all of it in Grok's own signed-in browser (--kind grok-imagine \| midjourney \| suno \| browser); --kind person only for what only a person can do |
+| `slop relay hedra JOB --action quote\|start\|pending\|complete\|failed [--cost COST] [--currency USD\|credits] [--job-id JOB_ID] [--url URL] [--reason REASON]` | (Grok) report a Hedra connector quote, claim a generation once, or return its result |
 | `slop relay inbox` | (the production) new messages from the director and Grok, marked read |
 | `slop relay status` | the production's state, engine, session, message counts and open jobs |
 | `slop relay wake [URL]` | the wake-up routine: Grok's webhook, called when the production posts while Grok is not waiting (a URL turns it on; off; test); its key: $CLAUDIA_WAKE_KEY |
