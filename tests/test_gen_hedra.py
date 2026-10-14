@@ -224,3 +224,51 @@ def test_status_labels_uncapped_hedra(env, tmp_path):
     assert rc == 0, out
     assert 'USD cap: no cap (0 = unlimited)' in out['text']
     assert out['spend']['budget']['hedra_usd'] == 0
+
+
+def test_json_budget_uncapped_flags_and_lead_fallback(env):
+    p = json.loads((env / 'project.json').read_text())
+    p['budget']['hedra_usd'] = 2
+    p['budget']['hedra_credits'] = 0
+    p['lead']['possessive'] = ''
+    (env / 'project.json').write_text(json.dumps(p))
+    rc, out = run(env, 'status')
+    assert rc == 0
+    b = out['spend']['budget']
+    assert b['hedra_usd'] == 2 and b['uncapped']['hedra_usd'] is False
+    assert b['hedra_credits'] == 0 and b['uncapped']['hedra_credits'] is True
+    rc, out = run(env, 'lead', '--pronoun', 'he')
+    assert rc == 0 and out['lead']['possessive'] == 'His'
+    assert run(env, 'lead', '--pronoun', 'they')[1]['lead']['possessive'] == 'Their'
+    assert run(env, 'lead', '--possessive', "the singer's")[1]['lead']['possessive'] == "the singer's"
+    assert tpl.lead_words({'lead': {'pronoun': 'he', 'possessive': "the singer's"}})['possessive'] == "the singer's"
+
+
+def test_allow_turn_closer_and_lock_warning(env, tmp_path):
+    rc, out = run(env, 'clip', 'new', 's002', '--kind', 'sung', '--provider', 'hedra', '--allow-turn')
+    assert rc == 0, out
+    c = out['clip']; cid = c['id']
+    assert tpl.SUNG_TURN_CLOSER in c['body']['prompt'] and tpl.SUNG_CLOSER not in c['body']['prompt']
+    # A scaffold redraft must preserve the opt-in.
+    assert run(env, 'clip', 'set', cid, '--duration', '5')[0] == 0
+    assert tpl.SUNG_CLOSER not in store.load(env, cid)['body']['prompt']
+    # Simulate a reviewed, filled prompt with a contradictory turn.
+    c = store.load(env, cid)
+    c['body']['prompt'] = tpl.head(c['words'], 'He') + '. He turns to face the camera. ' + tpl.SUNG_CLOSER
+    store.save(env, c)
+    rc, out = run(env, 'clip', 'lock', cid)
+    assert rc == 0, out
+    assert any("both 'no head turns'" in w for w in out['warnings'])
+    rc, out = run(env, 'clip', 'set', cid, '--allow-turn')
+    assert rc == 0, out
+    c = store.load(env, cid)
+    assert c['status'] == 'draft' and 'He turns to face the camera.' in c['body']['prompt']
+    assert tpl.SUNG_CLOSER not in c['body']['prompt']
+    assert not any("both 'no head turns'" in w for w in run(env, 'clip', 'lock', cid)[1]['warnings'])
+
+
+def test_turn_warning_ignores_lyrics_and_negation():
+    assert tpl.turn_warning(tpl.head('Turn around') + '. ' + tpl.SUNG_CLOSER) is None
+    assert tpl.turn_warning('He does not turn. ' + tpl.SUNG_CLOSER) is None
+    assert tpl.turn_warning('He is facing the camera. ' + tpl.SUNG_CLOSER) is None
+    assert tpl.turn_warning('He turns to face the camera. ' + tpl.SUNG_CLOSER)

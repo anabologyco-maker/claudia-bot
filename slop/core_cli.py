@@ -1588,7 +1588,9 @@ def ledger_summary(pdir: Path, proj: dict) -> dict:
                    "higgsfield_credits": cap_cr, "higgsfield_left": round(cap_cr - hf_cr, 2) if cap_cr else None,
                    "hedra_usd": float(budget.get("hedra_usd") or 0),
                    "hedra_credits": float(budget.get("hedra_credits") or 0),
-                   "confirm_over_usd": budget.get("confirm_over_usd")},
+                   "confirm_over_usd": budget.get("confirm_over_usd"),
+                   "uncapped": {key: not bool(float(budget.get(key) or 0)) for key in
+                                ("openrouter_usd", "higgsfield_credits", "hedra_usd", "hedra_credits")}},
     }
 
 
@@ -1994,7 +1996,9 @@ def cmd_lead(args) -> dict:
         if changes.get("none") is True:
             text = "no lead character in this video" + (f"; {text}" if len(changes) > 1 else "")
         dec = append_decision(pdir, text, by=args.by)
-    show = {f: lead.get(f, "") for f in LEAD_FIELDS}
+    from .gen.templates import lead_words
+    effective = lead_words(proj)
+    show = {f: lead.get(f) or effective.get(f, "") for f in LEAD_FIELDS}
     asked = bool(args.none) or any(getattr(args, f, None) is not None for f in LEAD_FIELDS)
     lines = [("updated: " + ", ".join(changes) + " (logged in DECISIONS.md)") if changes else
              ("no change" if asked else "the lead:")]

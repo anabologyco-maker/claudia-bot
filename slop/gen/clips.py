@@ -511,12 +511,12 @@ def next_id(pdir: Path, kind: str, shot: str | None) -> str:
 
 
 def draft_prompt(pdir: Path, project: dict, song: SongData, *, kind: str, t0: float, dur: float, words: str,
-                 shot: dict, frame: str, style: str, lo: float = -.02, keep: list | None = None) -> str:
+                 shot: dict, frame: str, style: str, lo: float = -.02, keep: list | None = None, allow_turn: bool = False) -> str:
     lead = tpl.lead_words(project)
     kicks, dbs = song.kicks(t0, t0 + dur), song.downbeats_in(t0, t0 + dur)
     if kind == "sung":
         return tpl.sung_prompt(words=words, phrases=song.phrases(t0, t0 + dur, lo=lo, keep=keep), t0=t0, duration=dur,
-                               shot=shot, lead=lead, kicks=kicks, downbeats=dbs, style=style)
+                               shot=shot, lead=lead, kicks=kicks, downbeats=dbs, style=style, allow_turn=allow_turn)
     return tpl.motion_prompt(t0=t0, duration=dur, shot=shot, lead=lead, kicks=kicks, downbeats=dbs, frame=frame, style=style)
 
 
@@ -539,9 +539,11 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
         song_t0: float | None = None, duration: int | None = None, start: str | None = None, frame: str | None = None,
         style: str | None = None, provider: str | None = None, model: str | None = None, resolution: str | None = None,
         force: bool = False, window_mode: str | None = None, words: str | None = None,
-        aspect_ratio: str | None = None, reuse_start: bool = False) -> dict:
+        aspect_ratio: str | None = None, reuse_start: bool = False, allow_turn: bool = False) -> dict:
     if kind not in ("sung", "motion"):
         raise SlopError("--kind must be sung or motion")
+    if allow_turn and kind != "sung":
+        raise SlopError("--allow-turn is for sung clips; motion prompts already allow turns")
     style = style or tpl.default_style(kind)                  # sung: the short form (it copies @Audio1); motion: screenplay
     if style not in tpl.STYLES:
         raise SlopError("--style must be short or screenplay")
@@ -641,12 +643,12 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
     else:
         words = ""
     prompt = draft_prompt(pdir, project, song, kind=kind, t0=wt0, dur=dur, words=words, shot=shot, frame=frame, style=style,
-                          lo=lo, keep=keep)
+                          lo=lo, keep=keep, allow_turn=allow_turn)
     ks = {round(k[0], 3) for k in keep} if keep else None
     clip = {"id": cid, "shot": shot_id, "kind": kind, "status": "draft", "provider": prov,
             "model": mdl, "frame": frame, "start": store.rel(pdir, sp), "start_sha1": sha,
             "refs": [], "videos": [], "song_t0": round(wt0, 3), "needed": [round(need[0], 3), round(need[1], 3)],
-            "words": words, "window": window,
+            "words": words, "window": window, "allow_turn": allow_turn,
             "body": {"prompt": prompt, "duration": dur, "resolution": resolution or "720p", "aspect_ratio": aspect_ratio or ("adaptive" if prov == "hedra" else aspect(project)),
                      "generate_audio": True},
             "takes": [], "covers": [], "why": (shot.get("notes") or shot.get("action") or f"storyboard shot {shot_id}"),
@@ -722,7 +724,7 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
                model: str | None = None, provider: str | None = None, frame: str | None = None, start: str | None = None,
                refs: list[str] | None = None, clear_refs: bool = False, audio: str | None = None,
                audio_mode: str | None = None, generate_audio: bool | None = None, recut: bool = False,
-               why: str | None = None, needed: list[float] | None = None, aspect_ratio: str | None = None, reuse_start: bool = False) -> dict:
+               why: str | None = None, needed: list[float] | None = None, aspect_ratio: str | None = None, reuse_start: bool = False, allow_turn: bool = False) -> dict:
     c = store.load(pdir, cid)
     if c.get("status") == "submitted":
         raise SlopError(inflight_msg(c))
@@ -730,6 +732,8 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
     song = SongData(pdir)
     lead = tpl.lead_words(project)
     sung = c["kind"] == "sung"
+    if allow_turn and not sung:
+        raise SlopError("--allow-turn is for sung clips; motion prompts already allow turns")
     if words is not None and not sung:
         raise SlopError("--words is for sung clips (the words the lead sings in the window)")
     if words is not None and requote:
@@ -901,10 +905,18 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
                                            words=c.get("words") or "", shot=find_shot(pdir, c.get("shot") or "") or {},
                                            frame=c.get("frame") or "ref",
                                            style=notes.get("style") or tpl.default_style(c["kind"]),
-                                           lo=word_lo(c.get("window")), keep=c.get("her_words"))
+                                           lo=word_lo(c.get("window")), keep=c.get("her_words"),
+                                           allow_turn=c.get("allow_turn", False))
         notes["scaffold"] = c["body"]["prompt"]
         notes.pop("window_changed", None)
         changed.append("prompt scaffold")
+    if allow_turn:
+        c["allow_turn"] = True
+        cur = c["body"]["prompt"]
+        c["body"]["prompt"] = cur.replace(tpl.SUNG_CLOSER, tpl.SUNG_TURN_CLOSER)
+        if notes.get("scaffold") == cur:
+            notes["scaffold"] = c["body"]["prompt"]
+        changed.append("allow_turn")
     was = c.get("status")
     if changed and was in ("locked", "delivered", "failed", "declined"):
         c["status"] = "draft"
@@ -997,7 +1009,9 @@ def lock(pdir: Path, cid: str) -> dict:
     next_step = (f"slop relay job --kind hedra --what quote --clip {cid}" if c.get("provider") == "hedra"
                  else f"slop clip submit {cid} --yes")
     if c.get("status") == "locked":
-        return {"clip": c, "text": f"{cid} is already locked; next: {next_step}"}
+        turn = tpl.turn_warning((c.get("body") or {}).get("prompt") or "") if c.get("kind") == "sung" else None
+        return {"clip": c, "warnings": [turn] if turn else [],
+                "text": f"{cid} is already locked; next: {next_step}" + ("\n  ! " + turn if turn else "")}
     if c.get("status") == "submitted":
         raise SlopError(inflight_msg(c))
     probs = lock_problems(pdir, c)
@@ -1018,8 +1032,12 @@ def lock_warnings(c: dict) -> list[str]:
         return []
     w = tpl.sung_length_warning((c.get("body") or {}).get("prompt") or "")
     done = "Locked anyway" if c.get("status") == "locked" else "Lock and submit still go ahead"
-    return [f"{w}. {done}; to shorten it: slop clip set {c['id']} --prompt-file FILE, then slop clip lock "
+    warnings = [f"{w}. {done}; to shorten it: slop clip set {c['id']} --prompt-file FILE, then slop clip lock "
             f"{c['id']}"] if w else []
+    turn = tpl.turn_warning((c.get("body") or {}).get("prompt") or "")
+    if turn:
+        warnings.append(turn)
+    return warnings
 
 
 # ------------------------------------------------------------------------------------------------ costs
@@ -1953,7 +1971,7 @@ def make_cover(pdir: Path, root_id: str, prop: dict, *, lock_it: bool = False, s
     if scaffolded:                                                   # a cover sings: redraft it in the short form
         prompt = tpl.sung_prompt(words=words, phrases=song.phrases(t0, t0 + dur, lo=lo, keep=hw or None), t0=t0, duration=dur,
                                  shot=(find_shot(pdir, root.get("shot") or "") or {}), lead=lead,
-                                 kicks=song.kicks(t0, t0 + dur), downbeats=song.downbeats_in(t0, t0 + dur), style="short")
+                                 kicks=song.kicks(t0, t0 + dur), downbeats=song.downbeats_in(t0, t0 + dur), style="short", allow_turn=parent.get("allow_turn", False))
         note = ("the parent prompt is timestamped for its own window: this cover is drafted in the short sung form (it "
                 "copies @Audio1 far more often); write its line of framing and light")
     elif kept:
@@ -1966,7 +1984,7 @@ def make_cover(pdir: Path, root_id: str, prop: dict, *, lock_it: bool = False, s
     clip = {"id": cid, "shot": root.get("shot"), "kind": "sung", "status": "draft", "provider": parent.get("provider") or "openrouter",
             "model": parent.get("model") or sung_default_model(project)[0], "frame": "ref", "start": store.rel(pdir, sp),
             "start_sha1": sha, **({"start_frame": sf} if sf else {}), "refs": list(parent.get("refs") or []), "videos": [],
-            "song_t0": round(t0, 3), "needed": prop["needed"], "words": words, "window": window,
+            "song_t0": round(t0, 3), "needed": prop["needed"], "words": words, "window": window, "allow_turn": parent.get("allow_turn", False),
             "body": {**(parent.get("body") or {}), "prompt": prompt, "duration": dur},
             "takes": [], "covers": [], "parent": root_id, "after": prop.get("parent"), "why": prop["why"],
             "created": store.now(), "hosted": {}, "declined": [], "history": [],

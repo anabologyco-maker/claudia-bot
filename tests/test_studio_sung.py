@@ -95,7 +95,8 @@ def test_timed_beats_and_words_are_counted_outside_the_quoted_lyric():
     w = tpl.sung_length_warning(W02_LONG)
     assert "8 timed beats" in w and "words besides the quoted lyric" in w
     assert "0 % to 78 %" in w and "c01" in w and "28 % to 100 %" in w and "W02" in w        # the measured copy rates
-    assert "One continuous shot, no cuts, no head turns." in w and "60-clips.md §4.0" in w
+    assert "configured lead pronoun" in w and "60-clips.md §4.0" in w
+    assert "Only she sings" not in w
     assert tpl.sung_length_warning(SD08_SHORT) is None
 
 

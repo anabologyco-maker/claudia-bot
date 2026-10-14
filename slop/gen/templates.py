@@ -12,8 +12,8 @@ the missing ones); one dominant camera move; say who voices and keep every other
 (the plate carries the look). Which grammar (DEFAULT_STYLE):
   short       THE DEFAULT FOR SUNG (lip-sync) CLIPS AND THEIR COVERS: SHORT_RULE, "the head quoting every word, one
               line of framing and light, at most 2 timed beats", then SHORT_CLOSER. SHORT_TEMPLATE, the block shipped
-              verbatim in docs/60-clips.md §4.0 and §5 (and in the prompt-book brief; skills/clips quotes SHORT_RULE and
-              SHORT_CLOSER; tests/test_studio_integration.py keeps them identical):
+              verbatim as a Claudia example in docs/60-clips.md §4.0 and §5. The prompt-book and skills use
+              lead-aware placeholders; tests/test_studio_integration.py checks their grammar:
                 @Image1 sings @Audio1. She lip-syncs to @Audio1 exactly, every word in time: "<every word in the window>".
                 <Framing> of the woman from @Image1 (<canon tags>), <how she sings the words>. <Light>. <Camera>.
                 [<a.aa s (the sound)>: <one small action>.]
@@ -44,6 +44,7 @@ MOTION_FIRST = "Moving in time with @Audio1. "
 MOTION_REF = "The scene from @Image1, moving in time with @Audio1. "
 CLOSER = "One continuous shot, no cuts. No text, letters or logos."
 SUNG_CLOSER = "One continuous shot, no cuts, no head turns."
+SUNG_TURN_CLOSER = "One continuous shot, no cuts."
 NO_TEXT = "No text, letters or logos."
 SHORT_CLOSER = f"{SUNG_CLOSER} Only she sings. {NO_TEXT}"           # "she" follows lead.pronoun in a draft
 SHORT_LINE = "<Framing> of the woman from @Image1 (<canon tags>), <how she sings the words>. <Light>. <Camera>."
@@ -74,7 +75,7 @@ def default_style(kind: str) -> str:
 def lead_words(project: dict) -> dict:
     lead = project.get("lead") or {}
     pron = (lead.get("pronoun") or "She").strip().capitalize()
-    poss = {"She": "Her", "He": "His", "They": "Their", "It": "Its"}.get(pron, "Their")
+    poss = (lead.get("possessive") or "").strip() or {"She": "Her", "He": "His", "They": "Their", "It": "Its"}.get(pron, "Their")
     return {"noun": (lead.get("noun") or {"She": "the woman", "He": "the man", "They": "the singer", "It": "the subject"}.get(pron, "the singer")).strip(), "pronoun": pron, "possessive": poss,
             "sings": _verb(pron, "sings"), "canon": (lead.get("canon") or "").strip(),
             "far": (lead.get("far") or "").strip()}
@@ -153,7 +154,7 @@ def sung_length_warning(prompt: str) -> str | None:
         return None
     return ("this sung prompt has " + " and ".join(over) + ". With long screenplay prompts Seedance mostly re-sang the "
             "line instead of copying @Audio1; the short sung form raised the measured share of sung seconds in sync from "
-            f"0 % to 78 % (studio run, c01) and from 28 % to 100 % (SP W02): {SHORT_RULE}, then \"{SHORT_CLOSER}\" "
+            f"0 % to 78 % (studio run, c01) and from 28 % to 100 % (SP W02): {SHORT_RULE}, then the closer using the configured lead pronoun "
             "(docs/60-clips.md §4.0). Keep a long form only for an acting moment with a cut-away ready")
 
 
@@ -178,7 +179,7 @@ def _r(x: float) -> str:
 
 
 def sung_prompt(*, words: str, phrases: list[dict], t0: float, duration: float, shot: dict, lead: dict,
-                kicks: list[float], downbeats: list[float], style: str = "short") -> str:
+                kicks: list[float], downbeats: list[float], style: str = "short", allow_turn: bool = False) -> str:
     """phrases are song-time {t0, t1, text}; kicks/downbeats song-time. Times in the prompt are clip-relative.
     "short" (the sung default, SHORT_TEMPLATE): the head, one line of framing and light and the sung closer; timed beats
     are left to the writer (at most 2, from draft_notes). "screenplay": the timestamped scaffold, for a sung shot played as an acting moment."""
@@ -194,7 +195,7 @@ def sung_prompt(*, words: str, phrases: list[dict], t0: float, duration: float, 
                          "eyes closed, deadpan, full voice …]]")
         cam = camera or "Locked camera"
         return "\n".join([h, f"{fr} of {noun} from @Image1{canon}, {act}. [[Light, e.g. Warm light from the side]]. {cam}.",
-                          f"{SUNG_CLOSER} Only {pron.lower()} {sings}. {NO_TEXT}"])
+                          f"{SUNG_TURN_CLOSER if allow_turn else SUNG_CLOSER} Only {pron.lower()} {sings}. {NO_TEXT}"])
     lines = [h,
              f"[[Place + light + blocking at 0.0 s: where we are, the light, who is where and wearing what]] {fr} of {noun} "
              f"from @Image1{canon}." + (f" ({action}.)" if action else ""),
@@ -232,7 +233,7 @@ def motion_prompt(*, t0: float, duration: float, shot: dict, lead: dict, kicks: 
     if style == "short":
         who = f" {noun[0].upper() + noun[1:]} from @Image1 " + (action or "[[one clear action with an end state]]") + "." if lead_on else \
             " " + (action[0].upper() + action[1:] if action else "[[one clear action with an end state]]") + "."
-        tail = f" No cuts. {poss} mouth stays closed, face expressionless." if lead_on else " No cuts. No text, letters or logos."
+        tail = f" No cuts. {poss[0].upper() + poss[1:]} mouth stays closed, face expressionless." if lead_on else " No cuts. No text, letters or logos."
         return f"{prefix}{fr}.{who} {(camera or '[[Camera move]]')}.{tail}"
     lines = [prefix + f"[[Place + light + blocking at 0.0 s: where we are, the light, who is where and wearing what]] {fr}."
              + (f" ({action}.)" if action else ""),
@@ -250,3 +251,15 @@ def motion_prompt(*, t0: float, duration: float, shot: dict, lead: dict, kicks: 
     cam = f"Camera: {camera}." if camera else "Camera: [[one move tied to a hit]]."
     lines.append(f"{cam} Nobody's lips form words. {CLOSER}")
     return "\n".join(lines)
+
+
+def turn_warning(prompt: str) -> str | None:
+    # Lyric text is not an acting instruction. A warning does not rewrite or block the prompt.
+    text = re.sub(r'"[^"\n]*"', '', prompt.lower())
+    if not re.search(r"\bno head turns\b", text):
+        return None
+    text = re.sub(r"\bno head turns\b", "", text)
+    text = re.sub(r"\b(?:no|never|do not|does not|don't|doesn't) (?:head )?turn(?:s|ing)?\b", "", text)
+    if re.search(r"\bturn(?:s|ing)?\b", text):
+        return "prompt says both 'no head turns' and a turn; review the action and use --allow-turn or rewrite the conflicting line"
+    return None

@@ -200,3 +200,20 @@ def test_cancel_stale_quote_without_setup(rig):
     out = command(rig, 'relay', 'cancel', jid, '--reason', 'superseded by direct test')
     assert out['status'] == 'cancelled' and out['ok']
     assert not R._jobs(rig[2]) and not ledger.rows(rig[0])
+
+
+def test_quote_status_amount_staleness_and_report_status(rig):
+    pdir, cid, rd = rig
+    jid = command(rig, 'relay', 'job', '--kind', 'hedra', '--what', 'quote', '--clip', cid)['job']
+    out = command(rig, 'relay', 'hedra', jid, '--action', 'quote', '--cost', '.6', '--currency', 'USD')
+    assert out['status'] == 'done'
+    assert 'owner' in R._rows(rd / 'inbox.jsonl')[-1]['text']
+    assert 'director' not in R._rows(rd / 'inbox.jsonl')[-1]['text']
+    out = command(rig, 'clip', 'status', cid)
+    assert out['quote']['cost'] == .6 and out['quote']['currency'] == 'USD'
+    assert out['quote']['current'] and 'price unknown' not in out['text']
+    assert command(rig, 'relay', 'hedra', jid, '--action', 'quote', '--cost', '.6', '--currency', 'USD')['status'] == 'done'
+    command(rig, 'clip', 'set', cid, '--aspect-ratio', '1:1')
+    out = command(rig, 'clip', 'status', cid)
+    assert not out['quote']['current'] and 'inputs changed' in out['text']
+    assert not ledger.rows(pdir)

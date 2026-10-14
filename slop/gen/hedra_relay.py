@@ -105,7 +105,7 @@ def report(a):
         if not j or j["job_kind"] != "hedra":
             raise SlopError("name a Hedra relay job (J-NNNN)")
         if j["status"] != "queued":
-            return {"job": j["job"], "text": f"{j['job']}: already {j['status']}"}
+            return {"job": j["job"], "status": j["status"], "text": f"{j['job']}: already {j['status']}"}
         pdir = Path(j["project_dir"])
         state = R._read_json(rd / "jobs.json")
         rec = state.get(j["job"], {"status": "queued"})
@@ -123,11 +123,13 @@ def report(a):
                           no_audio_ref=not bool(req["request"].get("reference_audio_urls")))
             if fingerprint(current) != j["fingerprint"]:
                 raise SlopError("clip changed while quoting; cancel and prepare a fresh quote")
-            q = {"cost": cost, "currency": currency, "fingerprint": j["fingerprint"], "job": j["job"]}
+            q = {"cost": cost, "currency": currency, "fingerprint": j["fingerprint"], "job": j["job"],
+                 "resolution": req["request"]["resolution"],
+                 "no_audio_ref": not bool(req["request"].get("reference_audio_urls"))}
             path = store.clip_folder(pdir, j["clip"]) / "hedra-quote.json"
             R._write_json(path, q)
             rec.update(status="done", files=[str(path)], quote=q, ended=util.iso_now())
-            finish = f"Hedra quote for {j['clip']}: {cost:g} {currency}. Ask the director to approve before reserving " \
+            finish = f"Hedra quote for {j['clip']}: {cost:g} {currency}. Ask the owner to approve before reserving " \
                      "and posting a generate job. Quote: " + str(path)
         elif a.action == "failed" and j["what"] == "quote":
             if not a.reason:
@@ -158,7 +160,7 @@ def report(a):
                 store.save(pdir, c)  # persists before returning permission to call generate_video
                 rec.update(hedra_state="started")
                 state[j["job"]] = rec; R._write_json(rd / "jobs.json", state)
-                return {"job": j["job"], "request_file": j["request_file"], "idempotency_key": tk["idempotency_key"],
+                return {"job": j["job"], "status": "queued", "hedra_state": "started", "request_file": j["request_file"], "idempotency_key": tk["idempotency_key"],
                         "text": "Start claimed once. Call generate_video with the saved request and resolved "
                                 "file handles; immediately record job.job_id using relay hedra --action pending."}
             if a.action == "pending":
@@ -167,7 +169,7 @@ def report(a):
                 out = hedra.ingest(pdir, c, pending=True, job_id=a.job_id)
                 rec.update(hedra_state="pending", provider_job_id=a.job_id)
                 state[j["job"]] = rec; R._write_json(rd / "jobs.json", state)
-                return {**out, "job": j["job"]}
+                return {**out, "job": j["job"], "status": "queued", "hedra_state": "pending"}
             if a.action not in ("complete", "failed"):
                 raise SlopError("unsupported Hedra relay action")
             if a.action == "complete" or tk.get("relay_attempted"):
@@ -191,4 +193,4 @@ def report(a):
                 finish = f"Hedra {j['clip']} failed: {a.reason}. Retain estimated spend unless net cost is confirmed."
         # deliver writes the terminal job state and inbox message atomically, and wakes production.
     out = R.deliver(f"[grok] {j['job']}: {finish}", "grok", (j["job"], rec), optional_runner=True)
-    return {**out, "job": j["job"]}
+    return {**out, "job": j["job"], "status": rec["status"]}

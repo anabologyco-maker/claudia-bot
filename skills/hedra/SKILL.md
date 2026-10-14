@@ -23,3 +23,5 @@ Call get_model, get_balance, upload_file, then estimate with generation_tool=gen
 Use relay hedra for results, not generic relay done/fail. A duplicate completion is harmless. Relay cancel only closes an unattempted generation; it cannot cancel a remote Hedra job.
 
 Claude Code is not required to close Hedra jobs. wake_pending means the result is saved; never regenerate. For intentional image reuse, external image imports and sung lines crossing shot boundaries, follow docs/63-hedra.md.
+
+Inspect saved quotes with clip status; quote.current false means stale inputs. JSON budget.uncapped explicitly identifies unlimited caps. Quote reports close with status done and ask the owner to approve. A custom sung turn can use --allow-turn, but the pose and sync remain unverified until measured.

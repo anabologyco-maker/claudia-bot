@@ -203,8 +203,11 @@ only the measured covered spans should be used in the edit. See [lip-sync and co
 
 The default short sung prompt explicitly says **no head turns**, and the image is a reference, not
 an exact first frame. Do not promise the plate's exact starting pose or a turn with that prompt.
-An intended turn needs a reviewed screenplay prompt without contradictory constraints, or a separate
-motion shot. Sung first-frame mode is currently unsupported; acting plus singing needs its own test.
+An intended turn can use `clip new ... --allow-turn` or `clip set CLIP --allow-turn`. This replaces
+the default closer with "One continuous shot, no cuts."; it does not invent turn timing or guarantee
+the starting pose. Review the actual action and re-lock/requote the changed prompt. Lock warns when a
+prompt contains both "no head turns" and a turn. A moving or hidden mouth may reduce sync; measure it.
+For complex acting, use a reviewed screenplay prompt or a separate motion shot. Sung first-frame mode is currently unsupported; acting plus singing needs its own test.
 A reported 154 ms lag and 65% sync coverage do not establish an acceptable whole-line performance.
 Measure each take; do not automatically buy another generation to fix quality.
 
@@ -237,3 +240,17 @@ Automated tests use synthetic media and mocked responses; they do not spend mone
 render succeeds. Run `python -m pytest -q tests/test_gen_hedra.py tests/test_hedra_relay.py` with normal
 toolkit dependencies, pytest and FFmpeg. Complete the live smoke test before treating this as validated
 for production. [Hedra MCP endpoint](https://hedra.com/mcp).
+
+## Reading quotes and budgets
+
+`clip status CLIP` shows the saved Hedra relay quote with its currency, plus `quote.current` in JSON.
+Changed inputs are labelled stale; even a matching saved quote needs a fresh provider estimate before
+generation. Expired upload links must be refreshed and uploaded again. A quote is not a reservation or
+approval. Relay quote/completion reports return `status: "done"`; start/pending remain `status: "queued"`
+with `hedra_state` identifying the generation phase. The **owner** is the person authorizing spend.
+
+Status/spend JSON retains numeric caps for compatibility and adds `budget.uncapped` flags by budget key
+(under `spend.budget` in status). For example, `hedra_usd: 0.0` with
+`uncapped.hedra_usd: true` means no cap, not a zero-dollar allowance. `lead` shows inferred noun and
+possessive when unset, while preserving an explicitly configured possessive. Existing prompts and
+quotes are never silently rewritten when lead settings change.

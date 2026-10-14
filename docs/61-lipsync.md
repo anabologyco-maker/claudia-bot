@@ -374,3 +374,12 @@ new take had her head to boots).
 | A take's soundtrack is the song but the mouth is off | rare; check the review video | trust the eyes over the number: mark the span unsynced |
 | Sync figure looks good but the take is wrong (off-model, wrong action) | sync ≠ quality | QA the frames too (`60-clips.md` §10) |
 | Many covers, still gaps | provider/framing unsuited | stop covering; cut away; consider a frontal CU window on the other provider |
+
+### Lead wording and optional turns
+
+The she/her examples above use Claudia as the lead. Actual prompts must use the configured lead's
+pronoun, noun and possessive from `slop lead` (he/his, she/her, they/their, or custom wording); use
+"Only he sings" or "Only they sing" as appropriate. `clip new/set --allow-turn` replaces the default
+no-head-turns closer with "One continuous shot, no cuts.". The writer still supplies the action and
+timing. Lock warns on conflicting turn instructions. A moving or occluded mouth may reduce lip-sync
+accuracy; measure the take. No automatic turn detection or guaranteed accuracy penalty is assumed.

@@ -83,7 +83,12 @@ def test_the_short_template_is_one_block_everywhere():
     assert t in fenced(sec40) and t in fenced(sec5)
     assert tpl.SHORT_RULE in flat(sec40)
     book = read(ROOT / "templates" / "briefs" / "prompt-book.md")
-    assert t in fenced(book) and tpl.SHORT_RULE in flat(book), "the Director-tier writer gets the same block"
+    generic = (t.replace("She lip-syncs", "<Lead pronoun> <lip-syncs/lip-sync>")
+               .replace("of the woman", "of <lead noun>")
+               .replace("<how she sings the words>", "<how the lead sings the words>")
+               .replace("Only she sings.", "Only <lead pronoun> <sings/sing>."))
+    assert generic in fenced(book) and tpl.SHORT_RULE in flat(book)
+    assert "configured noun/possessive" in book and "--allow-turn" in book
     assert t in read(ROOT / "slop" / "gen" / "templates.py").replace("\n                ", "\n"), "the module doc"
 
 
@@ -103,15 +108,15 @@ def test_the_draft_is_the_template_with_slots():
 def test_the_clips_skill_quotes_the_same_words():
     step = line_with(read(ROOT / "skills" / "clips" / "SKILL.md"), "2. Timing for each clip")
     sung = step[step.index("Sung clips:"):step.index("Motion clips:")]
-    assert tpl.SHORT_RULE in sung and f"`{tpl.SHORT_CLOSER}`" in sung
+    assert tpl.SHORT_RULE in sung and tpl.SHORT_CLOSER.replace("Only she sings.", "Only <lead pronoun> <sings/sing>.") in sung
     assert f"about {tpl.SHORT_MAX_WORDS} words" in sung and f"at most {tpl.SHORT_MAX_BEATS} timed beats" in sung
     design = flat(read(ROOT / "skills" / "DESIGN.md"))
-    assert tpl.SHORT_RULE in design and tpl.SHORT_CLOSER in design
+    assert tpl.SHORT_RULE in design and tpl.SHORT_CLOSER.replace("Only she sings.", "Only <lead pronoun> <sings/sing>.") in design
 
 
 def test_the_code_says_the_same_rule():
     long = tpl.HEAD.format(words="Go") + ". " + " ".join(["word"] * 120)
-    assert tpl.SHORT_RULE in tpl.sung_length_warning(long) and tpl.SHORT_CLOSER in tpl.sung_length_warning(long)
+    assert tpl.SHORT_RULE in tpl.sung_length_warning(long) and "configured lead pronoun" in tpl.sung_length_warning(long)
     first = clips.short_first({"id": "W01", "kind": "sung", "body": {"prompt": long}}, .1, False)
     assert tpl.SHORT_RULE in first
     assert "framing/light" not in read(ROOT / "slop" / "gen" / "clips.py")

@@ -93,7 +93,7 @@ def dry_run(pdir, c, *, resolution=None, no_audio_ref=False):
     missing = [u["key"] for u in req["uploads"] if not u["source_url"]]
     return {"upload_problems": missing, "ready_to_upload": not missing, "dry_run": True, "clip": c["id"], "provider": "hedra", "transport": "mcp",
             "would_send": req["request"], "mcp_request": req["request"], "uploads": req["uploads"],
-            "lock_problems": problems, "estimate": {"generation_tool": "generate_video", "input": req["request"]},
+            "lock_problems": problems, "warnings": clips.lock_warnings(c), "estimate": {"generation_tool": "generate_video", "input": req["request"]},
             "text": f"{c['id']}: Hedra {MODEL} via MCP; no uploads or paid calls. "
                     "Price comes from Hedra's estimate, in its returned currency. "
                     + ("Missing public upload URLs: " + ", ".join(missing) + ". " if missing else "")
@@ -263,3 +263,21 @@ def poll(pdir, c, *, job_id=None):
                 f"{c['id']} --provider hedra --pending --job-id JOB_ID, then poll with get_generations."}
     return {"clip": c["id"], "text": f"{c['id']}: use Hedra get_generations with job_ids "
             f"[{tk.get('id')!r}], wait_seconds:20; follow poll_after_seconds, then clip ingest"}
+
+
+def saved_quote(pdir, c):
+    """Show saved prices without implying changed inputs or expired handles are still quoted."""
+    path = store.clip_folder(pdir, c["id"]) / "hedra-quote.json"
+    if not path.is_file():
+        return None
+    from .hedra_relay import fingerprint
+    try:
+        q = json.loads(path.read_text())
+        cost, currency = price(q.get("cost"), q.get("currency"))
+        current = build(pdir, c, no_audio_ref=q.get("no_audio_ref", False))
+        matches = q.get("fingerprint") == fingerprint(current)
+    except (OSError, ValueError, SlopError, KeyError, TypeError):
+        return {"current": False, "text": "saved Hedra quote cannot be verified; obtain a fresh quote"}
+    return {"cost": cost, "currency": currency, "job": q.get("job"), "current": matches,
+            "text": f"{cost:g} {currency} on Hedra (saved quote; " +
+                    ("re-estimate before generation)" if matches else "inputs changed: obtain a fresh quote)")}

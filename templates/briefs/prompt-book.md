@@ -76,11 +76,11 @@ Full-length variant: {{LEAD_FAR|use the canon, trimmed to what a full-length fra
 two, on real times):
 
 ```
-@Image1 sings @Audio1. She lip-syncs to @Audio1 exactly, every word in time: "<every word in the window>".
-<Framing> of the woman from @Image1 (<canon tags>), <how she sings the words>. <Light>. <Camera>.
+@Image1 sings @Audio1. <Lead pronoun> <lip-syncs/lip-sync> to @Audio1 exactly, every word in time: "<every word in the window>".
+<Framing> of <lead noun> from @Image1 (<canon tags>), <how the lead sings the words>. <Light>. <Camera>.
 [<a.aa s (the sound)>: <one small action>.]
 [<b.bb s (the sound)>: <one small action>.]
-One continuous shot, no cuts, no head turns. Only she sings. No text, letters or logos.
+One continuous shot, no cuts, no head turns. Only <lead pronoun> <sings/sing>. No text, letters or logos.
 ```
 
 That is the head quoting every word, one line of framing and light, at most 2 timed beats and the closer: no place
@@ -148,3 +148,5 @@ workflow for the writing · use a logged-in browser · ask questions · write ou
 
 Finish when the three files pass the checks and `report.md` is written. End with a 5-line summary: clips written (sung
 in the short form / motion), plates, check result, the riskiest clip, what the owner should read first.
+
+Use the effective lead fields from `slop lead`: he/his, she/her, they/their ("they sing"), or the configured noun/possessive. Fill the pronoun and verb placeholders; never copy them literally. A turn is opt-in with `clip new/set --allow-turn`, which removes the default "no head turns" closer. Review the action and re-lock/requote any changed prompt. A moving or hidden mouth may reduce sync; measure the result rather than promising an accuracy penalty or successful turn.
