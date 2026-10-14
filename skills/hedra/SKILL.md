@@ -25,3 +25,5 @@ Use relay hedra for results, not generic relay done/fail. A duplicate completion
 Claude Code is not required to close Hedra jobs. wake_pending means the result is saved; never regenerate. For intentional image reuse, external image imports and sung lines crossing shot boundaries, follow docs/63-hedra.md.
 
 Inspect saved quotes with clip status; quote.current false means stale inputs. JSON budget.uncapped explicitly identifies unlimited caps. Quote reports close with status done and ask the owner to approve. A custom sung turn can use --allow-turn, but the pose and sync remain unverified until measured.
+
+The approved references may be any supported photos (people, animals, objects, scenery or artwork). Do not add human, gender, pose or turn assumptions. Motion is general image animation; only sung clips require lip-sync review. Return discrepancies to the prompt writer instead of inventing changes.

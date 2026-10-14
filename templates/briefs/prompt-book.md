@@ -72,6 +72,11 @@ Full-length variant: {{LEAD_FAR|use the canon, trimmed to what a full-length fra
 
 ## Rules: two grammars — screenplay for acting and motion, short for copy
 
+For an uploaded photo, first inspect what it actually shows and the owner's requested action. Do not
+assume a person, gender, starting pose or turn. Write general image animation as motion; apply the sung
+form below only when singing/lip sync is requested for a selected performer. Use the actual subject
+and configured lead wording, and identify the intended performer if several subjects are present.
+
 **Sung clips: the short sung form** (`docs/60-clips.md` §4.0, verbatim; the bracketed beat lines are optional, at most
 two, on real times):
 

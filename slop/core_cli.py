@@ -1546,12 +1546,13 @@ def ledger_summary(pdir: Path, proj: dict) -> dict:
     void = voided(rows)
     asked = _requested_keys(pdir)
     by: dict[str, dict] = {}
+    active_hedra, confirmed_in_ledger = set(), set()
     for i, r in enumerate(rows):
         prov = str(r.get("provider") or "?")
         b = by.setdefault(prov, {"calls": 0, "est_usd": 0.0, "real_usd": 0.0, "credits": 0.0,
                                  "declined": 0, "failed": 0, "other": 0})
         u = r.get("units") if isinstance(r.get("units"), dict) else {}
-        b["calls"] += 0 if u.get("settles") else 1           # a settlement closes a call; it is not another one
+        b["calls"] += 0 if u.get("settles") or u.get("cost_confirmation") else 1           # a settlement closes a call; it is not another one
         st = r.get("status")
         if i in void:
             continue
@@ -1561,6 +1562,10 @@ def ledger_summary(pdir: Path, proj: dict) -> dict:
             if isinstance(r.get("real_usd"), (int, float)):
                 b["real_usd"] += float(r["real_usd"])
             k = (prov, str(u.get("clip")), str(u.get("take")))
+            if prov == "hedra" and u.get("clip") is not None and u.get("take") is not None:
+                active_hedra.add(k)
+                if isinstance(r.get("real_usd"), (int, float)):
+                    confirmed_in_ledger.add(k)
             if k in asked and r.get("credits"):
                 b["requested"] = b.get("requested", 0.0) + float(r["credits"])
                 b.setdefault("requested_takes", [])
@@ -1572,6 +1577,19 @@ def ledger_summary(pdir: Path, proj: dict) -> dict:
             b["failed"] += 1
         else:
             b["other"] += 1
+    # Older Hedra ingests saved confirmed cost only on the take. Read it without
+    # rewriting history, and never add it again when a ledger confirmation exists.
+    if active_hedra - confirmed_in_ledger:
+        import math
+        for cid, c in clip_docs(pdir):
+            for tk in (c or {}).get("takes", []):
+                key = ("hedra", str(cid), str(tk.get("n")))
+                cost = tk.get("cost_usd")
+                if (key in active_hedra - confirmed_in_ledger and tk.get("provider") == "hedra"
+                        and tk.get("currency") == "USD" and isinstance(cost, (int, float))
+                        and not isinstance(cost, bool) and math.isfinite(cost) and cost >= 0):
+                    by["hedra"]["real_usd"] += cost
+                    confirmed_in_ledger.add(key)
     for b in by.values():
         for k in ("est_usd", "real_usd", "credits", "requested"):
             if k in b:
@@ -2378,6 +2396,10 @@ def cmd_spend(args) -> dict:
             rows = [[p, b["calls"], util.money(b["est_usd"]), f"{b['credits']:g}", b["declined"], b["failed"]]
                     for p, b in sorted(led["by_provider"].items())]
             lines.append(util.table(rows, ["provider", "calls", "est $", "credits", "declined", "failed"]))
+            hd = led["by_provider"].get("hedra")
+            if hd is not None:
+                lines.append(f"Hedra confirmed USD from recorded takes: {util.money(hd['real_usd'])} "
+                             "(unconfirmed costs remain estimates; credits are not converted)")
             hf = led["by_provider"].get("higgsfield") or {}
             if hf.get("requested"):
                 rq = hf.get("requested_takes") or []

@@ -58,6 +58,18 @@ generation. Do not attach a direct-path result to an unrelated relay generation.
 
 ## Inputs and public upload links
 
+Start with the actual uploaded image and the owner's requested result. Photos may show people,
+animals, objects, landscapes, groups or artwork. Do not assume a person, gender, pose, camera-facing
+subject or a particular action. The writer inspects the reference and uses the requested subject and
+motion in the prompt; the connector executes that approved prompt without inventing changes.
+
+Use `--kind motion` for general image animation. Use `--kind sung` only when singing/lip sync is
+requested for a selected performer, with the corresponding audio window. Face and mouth guidance
+applies to those sung clips, not every uploaded photo. A group photo needs the intended subject
+identified before a performer-specific prompt is written. Reference mode can reinterpret framing;
+first-frame motion mode can use the photo as the start frame. Neither guarantees every action.
+
+
 Sung clips require the **full install** (`bash bin/setup.sh --full`) for song analysis/lyric alignment.
 Run `slop -p NAME analyze` before creating a sung clip if analysis/words.json is not present. Minimal
 installation alone is insufficient for the complete sung workflow.
@@ -208,8 +220,8 @@ the default closer with "One continuous shot, no cuts."; it does not invent turn
 the starting pose. Review the actual action and re-lock/requote the changed prompt. Lock warns when a
 prompt contains both "no head turns" and a turn. A moving or hidden mouth may reduce sync; measure it.
 For complex acting, use a reviewed screenplay prompt or a separate motion shot. Sung first-frame mode is currently unsupported; acting plus singing needs its own test.
-A reported 154 ms lag and 65% sync coverage do not establish an acceptable whole-line performance.
-Measure each take; do not automatically buy another generation to fix quality.
+Review each result against the requested subject, composition and action; measure lip sync only for
+sung clips. Do not automatically buy another generation to fix quality.
 
 ## Constraints
 
@@ -254,3 +266,13 @@ Status/spend JSON retains numeric caps for compatibility and adds `budget.uncapp
 `uncapped.hedra_usd: true` means no cap, not a zero-dollar allowance. `lead` shows inferred noun and
 possessive when unset, while preserving an explicitly configured possessive. Existing prompts and
 quotes are never silently rewritten when lead settings change.
+
+
+`spend` counts confirmed USD costs recorded on Hedra takes, including takes imported with older
+versions. New confirmations are also written to the ledger; repeat reports do not double-count, and
+confirmed refunds reduce the total. Unconfirmed prices stay estimates, and credits are never converted
+to USD. This is recorded project spend, not a fresh check of the provider's whole wallet.
+
+Multiple clips may have saved free quotes. A completed quote job is closed, and its saved quote is
+neither an open generation nor a reservation. Before paying, select exactly one clip and approve that
+clip's prompt and price. Leave the other test clips unsubmitted; do not batch-generate identical quotes.

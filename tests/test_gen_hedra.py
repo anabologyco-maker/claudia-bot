@@ -272,3 +272,58 @@ def test_turn_warning_ignores_lyrics_and_negation():
     assert tpl.turn_warning('He does not turn. ' + tpl.SUNG_CLOSER) is None
     assert tpl.turn_warning('He is facing the camera. ' + tpl.SUNG_CLOSER) is None
     assert tpl.turn_warning('He turns to face the camera. ' + tpl.SUNG_CLOSER)
+
+
+def test_confirmed_usd_counts_equal_estimate_repeat_and_refund(env, tmp_path):
+    from slop.core_cli import ledger_summary
+    cid = ready(env, tmp_path)
+    assert run(env, 'clip', 'submit', cid, '--yes', '--hedra-cost', '.6', '--hedra-currency', 'USD')[0] == 0
+    c = store.load(env, cid); tk = c['takes'][-1]
+    project = json.loads((env / 'project.json').read_text())
+    def totals():
+        return ledger_summary(env, project)['by_provider']['hedra']
+    assert totals()['real_usd'] == 0  # estimate is not confirmation
+    hedra.settle_cost(env, c, tk, cost=.6, currency='USD'); store.save(env, c)
+    assert totals()['real_usd'] == totals()['est_usd'] == .6 and totals()['calls'] == 1
+    before = (env / 'ledger.jsonl').read_bytes()
+    hedra.settle_cost(env, c, tk, cost=.6, currency='USD')
+    assert (env / 'ledger.jsonl').read_bytes() == before
+    hedra.settle_cost(env, c, tk, cost=.4, currency='USD'); store.save(env, c)
+    assert totals()['real_usd'] == totals()['est_usd'] == .4
+    hedra.settle_cost(env, c, tk, cost=0, currency='USD'); store.save(env, c)
+    assert totals()['real_usd'] == totals()['est_usd'] == 0
+
+
+def test_legacy_confirmed_costs_are_read_without_rewriting_or_double_counting(env, tmp_path):
+    from slop.core_cli import ledger_summary
+    cid = ready(env, tmp_path)
+    assert run(env, 'clip', 'submit', cid, '--yes', '--hedra-cost', '.6', '--hedra-currency', 'USD')[0] == 0
+    c = store.load(env, cid)
+    c['takes'][0].update(cost_usd=.6, status='delivered')
+    # Two pre-fix confirmed takes, each with an estimate row and cost on the take only.
+    c['takes'].append({**c['takes'][0], 'n': 2})
+    store.save(env, c)
+    ledger.record(env, provider='hedra', model=hedra.MODEL, kind='video', est_usd=.6,
+                  units={'clip': cid, 'take': 2})
+    project = json.loads((env / 'project.json').read_text())
+    before = (env / 'ledger.jsonl').read_bytes()
+    totals = ledger_summary(env, project)['by_provider']['hedra']
+    assert totals['real_usd'] == totals['est_usd'] == 1.2
+    assert (env / 'ledger.jsonl').read_bytes() == before
+    # A later explicit confirmation moves one take into the ledger path, without duplication.
+    hedra.settle_cost(env, c, c['takes'][0], cost=.6, currency='USD')
+    assert ledger_summary(env, project)['by_provider']['hedra']['real_usd'] == 1.2
+    ledger.settle(env, provider='hedra', clip=cid, take=2, note='confirmed refund')
+    assert ledger_summary(env, project)['by_provider']['hedra']['real_usd'] == .6
+    out = run(env, 'spend')[1]
+    assert 'Hedra confirmed USD from recorded takes: $0.60' in out['text']
+
+
+def test_confirmed_credit_cost_is_not_usd(env, tmp_path):
+    from slop.core_cli import ledger_summary
+    cid = ready(env, tmp_path)
+    assert run(env, 'clip', 'submit', cid, '--yes', '--hedra-cost', '10', '--hedra-currency', 'credits')[0] == 0
+    c = store.load(env, cid)
+    hedra.settle_cost(env, c, c['takes'][0], cost=8, currency='credits'); store.save(env, c)
+    b = ledger_summary(env, json.loads((env / 'project.json').read_text()))['by_provider']['hedra']
+    assert b['credits'] == 8 and b['real_usd'] == b['est_usd'] == 0

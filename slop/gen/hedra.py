@@ -182,12 +182,17 @@ def settle_cost(pdir, c, tk, *, cost=None, currency=None):
     if currency != tk.get("currency"):
         raise SlopError("Hedra result currency differs from its reserved wallet; reconcile before ingest")
     field = "est_usd" if currency == "USD" else "credits"
-    old = sum(float(r.get(field) or 0) for r in ledger.open_charges(pdir, "hedra", c["id"], tk["n"]))
-    if abs(cost - old) > 1e-9:
+    charges = ledger.open_charges(pdir, "hedra", c["id"], tk["n"])
+    old = sum(float(r.get(field) or 0) for r in charges)
+    confirmed = sum(float(r.get("real_usd") or 0) for r in charges)
+    needs_confirmation = currency == "USD" and (
+        not any(r.get("real_usd") is not None for r in charges) or abs(cost - confirmed) > 1e-9)
+    if abs(cost - old) > 1e-9 or needs_confirmation:
         ledger.record(pdir, provider="hedra", model=MODEL, kind="video-adjust", status="ok",
                       est_usd=cost - old if currency == "USD" else 0,
+                      real_usd=cost - confirmed if currency == "USD" else None,
                       credits=cost - old if currency == "credits" else None,
-                      request_id=tk.get("id"), units={"clip": c["id"], "take": tk["n"]})
+                      request_id=tk.get("id"), units={"clip": c["id"], "take": tk["n"], "cost_confirmation": True})
     tk["cost_usd" if currency == "USD" else "credits"] = cost
 
 

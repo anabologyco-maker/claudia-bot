@@ -91,7 +91,7 @@ def open_charges(pdir: Path, provider: str, clip, take) -> list[dict]:
 
 def record(pdir: Path | None, *, provider: str, model: str, kind: str, est_usd: float = 0.0,
            units: dict | None = None, request_id: str | None = None, status: str = "submitted",
-           credits: float | None = None, note: str = "") -> dict:
+           credits: float | None = None, note: str = "", real_usd: float | None = None) -> dict:
     units = dict(units or {})
     if pdir is not None and str(kind).endswith("-refund") and status in COUNTED and not units.get("settles"):
         k = take_key({"provider": provider, "units": units})
@@ -108,6 +108,8 @@ def record(pdir: Path | None, *, provider: str, model: str, kind: str, est_usd: 
     row = {"ts": round(time.time(), 3), "provider": provider, "model": model, "kind": kind,
            "est_usd": round(float(est_usd), 6), "units": units, "request_id": request_id,
            "status": status, "credits": credits, "note": note}
+    if real_usd is not None:
+        row["real_usd"] = round(float(real_usd), 6)
     if pdir is not None:
         with ledger_path(pdir).open("a", encoding="utf-8") as f:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
