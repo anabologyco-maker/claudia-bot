@@ -276,7 +276,7 @@ def cmd_clip_new(a) -> dict:
     pdir = _pd(a)
     r = clips.new(pdir, a.shot, a.kind, cid=a.id, t0=a.t0, t1=a.t1, song_t0=a.song_t0, duration=a.duration, start=_in(pdir, a.start),
                   frame=a.frame, style=a.style, provider=a.provider, model=a.model, resolution=a.res, force=a.force,
-                  window_mode=a.window, words=a.words)
+                  window_mode=a.window, words=a.words, aspect_ratio=a.aspect_ratio, reuse_start=a.reuse_start, allow_turn=a.allow_turn)
     return {"clip_id": r["clip"]["id"], "created": r["created"], "warnings": r.get("warnings", []), "clip": r["clip"],
             "text": r["text"]}
 
@@ -291,7 +291,7 @@ def cmd_clip_set(a) -> dict:
                          resolution=a.res, model=a.model, provider=a.provider, frame=a.frame, start=_in(pdir, a.start),
                          refs=[_in(pdir, x) for x in a.ref], clear_refs=a.clear_refs, audio=_in(pdir, a.audio),
                          audio_mode=a.audio_mode, generate_audio=ga, recut=a.recut,
-                         why=a.why, needed=[a.t0, a.t1] if (a.t0 is not None and a.t1 is not None) else None)
+                         why=a.why, aspect_ratio=a.aspect_ratio, reuse_start=a.reuse_start, allow_turn=a.allow_turn, needed=[a.t0, a.t1] if (a.t0 is not None and a.t1 is not None) else None)
     return {"clip_id": a.clip, "changed": r["changed"], "warnings": r["warnings"], "text": r["text"]}
 
 
@@ -299,7 +299,7 @@ def cmd_clip_set(a) -> dict:
 def cmd_clip_lock(a) -> dict:
     from . import clips
     r = clips.lock(_pd(a), a.clip)
-    return {"clip_id": a.clip, "status": r["clip"]["status"], "text": r["text"]}
+    return {"clip_id": a.clip, "status": r["clip"]["status"], "warnings": r.get("warnings", []), "text": r["text"]}
 
 
 @_hinted
@@ -307,7 +307,8 @@ def cmd_clip_submit(a) -> dict:
     from . import clips
     r = clips.submit(_pd(a), a.clip, provider=a.provider, yes=a.yes, resolution=a.res, no_audio_ref=a.no_audio_ref,
                      experimental_data=a.experimental_data, resubmit_unknown=a.resubmit_unknown, dry=a.dry_run,
-                     finalize_from=a.finalize_from, again=a.again)
+                     finalize_from=a.finalize_from, again=a.again,
+                     hedra_cost=a.hedra_cost, hedra_currency=a.hedra_currency, quote_only=a.quote_only)
     r.pop("request", None)
     return r
 
@@ -323,7 +324,7 @@ def cmd_clip_ingest(a) -> dict:
     from . import clips
     pdir = _pd(a)
     return clips.ingest(pdir, a.clip, file=_in(pdir, a.file), url=a.url, job_id=a.job_id, credits=a.credits, pending=a.pending,
-                        failed=a.failed, declined=a.declined, provider=a.provider)
+                        failed=a.failed, declined=a.declined, provider=a.provider, cost_usd=a.cost_usd)
 
 
 @_hinted
@@ -416,10 +417,13 @@ def cmd_clip_status(a) -> dict:
     pdir = _pd(a)
     c = store.load(pdir, a.clip)
     r = clips.row(c)
+    from . import hedra
+    quote = hedra.saved_quote(pdir, c) if c.get("provider") == "hedra" else None
+    estimate = quote["text"] if quote else clips.describe_cost(c)
     lines = [f"{c['id']} · {c.get('kind')} · {c.get('status')} · {c.get('provider')} {c.get('model')} · shot {c.get('shot')}",
              f"window {c.get('song_t0')} s +{c['body'].get('duration')} s ({(c.get('window') or {}).get('mode')}, "
              f"{(c.get('window') or {}).get('file')}) · needed {c.get('needed')} · start {c.get('start')} · frame {c.get('frame')}",
-             f"words: {c.get('words')!r}", f"estimate: {clips.describe_cost(c)}", "prompt:", c["body"].get("prompt", "")]
+             f"words: {c.get('words')!r}", f"estimate: {estimate}", "prompt:", c["body"].get("prompt", "")]
     for tk in c.get("takes") or []:
         sy = tk.get("sync") or {}
         res = (tk.get("body") or {}).get("resolution")
@@ -433,7 +437,7 @@ def cmd_clip_status(a) -> dict:
     probs = clips.lock_problems(pdir, c) if c.get("status") == "draft" else []
     if probs:
         lines.append("to lock: " + "; ".join(probs))
-    return {"clip": c, "summary": r, "lock_problems": probs, "text": "\n".join(lines)}
+    return {"clip": c, "summary": r, "quote": quote, "lock_problems": probs, "text": "\n".join(lines)}
 
 
 # ================================================================================================= register
@@ -521,12 +525,16 @@ def register(sub) -> None:
     p.add_argument("--t1", type=float, help="needed span end (default: the shot's t1)")
     p.add_argument("--song-t0", type=float, help="window start (default: word gap before the shot / the shot start)")
     p.add_argument("--duration", type=int); p.add_argument("--start", help="start image (default: the plate's pick)")
+    p.add_argument("--allow-turn", action="store_true", help="sung clips: remove the default no-head-turns closer; review and re-lock")
+    p.add_argument("--reuse-start", action="store_true", help="allow an intentional repeat of another clip's start image")
     p.add_argument("--frame", choices=["ref", "first"], help="reference mode (default) or first-frame mode (motion only)")
     p.add_argument("--style", choices=["screenplay", "short"], default=None,
                    help="prompt grammar (default by kind: sung short, motion screenplay; docs/60-clips.md §4)")
     p.add_argument("--window", choices=["clean", "vocal", "mix"],
                    help="@Audio1: clean vocal (sung default), raw vocal stem, or the mix (motion default)")
-    p.add_argument("--provider", choices=["openrouter", "higgsfield"]); p.add_argument("--model")
+    p.add_argument("--provider", choices=["openrouter", "higgsfield", "hedra"]); p.add_argument("--model")
+    p.add_argument("--aspect-ratio", choices=["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+                   help="output shape; Hedra defaults to adaptive to the reference image")
     p.add_argument("--res", choices=["480p", "720p", "1080p"]); p.add_argument("--force", action="store_true")
     p.add_argument("--words", help="sung: quote only these words (her words only; the clean window holds just them)")
     p.set_defaults(func=cmd_clip_new)
@@ -539,7 +547,11 @@ def register(sub) -> None:
     p.add_argument("--duration", type=int); p.add_argument("--song-t0", type=float)
     p.add_argument("--t0", type=float); p.add_argument("--t1", type=float)
     p.add_argument("--res", choices=["480p", "720p", "1080p"]); p.add_argument("--model")
-    p.add_argument("--provider", choices=["openrouter", "higgsfield"]); p.add_argument("--frame", choices=["ref", "first"])
+    p.add_argument("--provider", choices=["openrouter", "higgsfield", "hedra"]); p.add_argument("--frame", choices=["ref", "first"])
+    p.add_argument("--aspect-ratio", choices=["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+                   help="output shape; Hedra defaults to adaptive to the reference image")
+    p.add_argument("--allow-turn", action="store_true", help="sung clips: remove the default no-head-turns closer; review and re-lock")
+    p.add_argument("--reuse-start", action="store_true", help="allow --start to reuse another clip's image")
     p.add_argument("--start"); p.add_argument("--ref", action="append", default=[]); p.add_argument("--clear-refs", action="store_true")
     p.add_argument("--audio", help="use this file as the window audio (e.g. the clean vocal window)")
     p.add_argument("--audio-mode", choices=["clean", "vocal", "mix"]); p.add_argument("--recut", action="store_true")
@@ -551,7 +563,7 @@ def register(sub) -> None:
     p.add_argument("clip"); p.set_defaults(func=cmd_clip_lock)
 
     p = cs.add_parser("submit", help="spend: OpenRouter job, or the Higgsfield request file for the bot (locked + --yes)")
-    p.add_argument("clip"); p.add_argument("--provider", choices=["openrouter", "higgsfield"])
+    p.add_argument("clip"); p.add_argument("--provider", choices=["openrouter", "higgsfield", "hedra"])
     p.add_argument("--yes", action="store_true"); p.add_argument("--res", choices=["480p", "720p", "1080p"])
     p.add_argument("--no-audio-ref", action="store_true", help="motion only: submit without the song window")
     p.add_argument("--resubmit-unknown", action="store_true",
@@ -565,6 +577,9 @@ def register(sub) -> None:
                    help="with --finalize-from: a SECOND paid finalize of a draft that was already finalized (only when "
                         "the owner asks; the first finalized take is kept)")
     p.add_argument("--experimental-data", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--quote-only", action="store_true", help="Hedra: upload/prepare a free quote; no generation or reservation")
+    p.add_argument("--hedra-cost", type=float, help="MCP: fresh Hedra estimate cost")
+    p.add_argument("--hedra-currency", choices=["USD", "credits"], help="MCP: currency from the same estimate")
     p.set_defaults(func=cmd_clip_submit)
 
     p = cs.add_parser("poll", help="check OpenRouter jobs (all in flight when no CLIP); download completed takes")
@@ -574,8 +589,9 @@ def register(sub) -> None:
 
     p = cs.add_parser("ingest", help="add a take from a file or a result URL (Higgsfield), or mark a request pending/failed")
     p.add_argument("clip"); p.add_argument("--file"); p.add_argument("--url"); p.add_argument("--job-id")
-    p.add_argument("--credits", type=float); p.add_argument("--provider", choices=["higgsfield", "openrouter", "manual"])
+    p.add_argument("--credits", type=float); p.add_argument("--provider", choices=["higgsfield", "openrouter", "hedra", "manual"])
     p.add_argument("--pending", action="store_true"); p.add_argument("--failed"); p.add_argument("--declined")
+    p.add_argument("--cost-usd", type=float, help="Hedra: confirmed net job cost in USD (including 0 for a refund)")
     p.set_defaults(func=cmd_clip_ingest)
 
     p = cs.add_parser("sync", help="measure lip sync of a take (avsync) -> take.sync + PNG")

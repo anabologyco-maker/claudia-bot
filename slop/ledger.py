@@ -91,7 +91,7 @@ def open_charges(pdir: Path, provider: str, clip, take) -> list[dict]:
 
 def record(pdir: Path | None, *, provider: str, model: str, kind: str, est_usd: float = 0.0,
            units: dict | None = None, request_id: str | None = None, status: str = "submitted",
-           credits: float | None = None, note: str = "") -> dict:
+           credits: float | None = None, note: str = "", real_usd: float | None = None) -> dict:
     units = dict(units or {})
     if pdir is not None and str(kind).endswith("-refund") and status in COUNTED and not units.get("settles"):
         k = take_key({"provider": provider, "units": units})
@@ -108,6 +108,8 @@ def record(pdir: Path | None, *, provider: str, model: str, kind: str, est_usd: 
     row = {"ts": round(time.time(), 3), "provider": provider, "model": model, "kind": kind,
            "est_usd": round(float(est_usd), 6), "units": units, "request_id": request_id,
            "status": status, "credits": credits, "note": note}
+    if real_usd is not None:
+        row["real_usd"] = round(float(real_usd), 6)
     if pdir is not None:
         with ledger_path(pdir).open("a", encoding="utf-8") as f:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -141,8 +143,9 @@ def spent_usd(pdir: Path, provider: str | None = None) -> float:
                      if provider is None or r.get("provider") == provider), 6)
 
 
-def spent_credits(pdir: Path) -> float:
-    return round(sum(float(r.get("credits") or 0.0) for r in counted(rows(pdir))), 2)
+def spent_credits(pdir: Path, provider: str | None = None) -> float:
+    return round(sum(float(r.get("credits") or 0.0) for r in counted(rows(pdir))
+                     if provider is None or r.get("provider") == provider), 2)
 
 
 def free_only() -> bool:
@@ -206,10 +209,18 @@ def check_budget(pdir: Path, provider: str, add_usd: float = 0.0, add_credits: f
                             "Raise budget.openrouter_usd in project.json only if the owner agrees.")
     if provider == "higgsfield":
         cap = float(b.get("higgsfield_credits", 0) or 0)
-        now = spent_credits(pdir)
+        now = spent_credits(pdir, "higgsfield")
         if cap and now + add_credits > cap + 1e-9:
             raise SlopError(f"Higgsfield credit cap {cap:g} would be exceeded (spent ~{now:g} + {add_credits:g})."
                             + _requested_hint(pdir))
+    if provider == "hedra":
+        for key, spent, add, unit in (("hedra_usd", spent_usd(pdir, "hedra"), add_usd, "USD"),
+                                      ("hedra_credits", spent_credits(pdir, "hedra"), add_credits, "credits")):
+            cap = float(b.get(key, 0) or 0)
+            if cap and spent + add > cap + 1e-9:
+                raise SlopError(f"Hedra {unit} cap {cap:g} would be exceeded ({spent:g} + {add:g}); budget.{key}")
+        if add_credits and not yes:
+            raise SlopError("Hedra credits require --yes after the owner approves the quoted credit amount")
     confirm = float(b.get("confirm_over_usd", 2) or 0)
     if not yes and add_usd > confirm:
         raise SlopError(f"this call is estimated at ${add_usd:.2f} (> confirm_over_usd ${confirm:.2f}); "

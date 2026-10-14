@@ -23,7 +23,7 @@ orv.py / prompts.py flow, made generic and gated for a weaker operator:
     @Image1, moving in time with @Audio1."); --frame first pins the exact composition (no audio conditioning on
     OpenRouter: the take is warned and the prompt says "the music"). On Higgsfield motion clips default to --frame first
     (start_image + audio_references: both count there).
-  * two clips never start from the same frame: a plate already used as a start makes the next clip take the plate's next
+  * starts are unique unless --reuse-start explicitly permits an intentional repeat: a plate already used as a start makes the next clip take the plate's next
     unused candidate (plates/cands/<plate>/*), else it is an error that names `slop clip frame` (a frame of an earlier
     take, by default its last in-sync frame — the production plan's "continue the previous clip").
   * spending requires status "locked" AND --yes (or the project gate prompts_approved), and the budget check passes
@@ -83,6 +83,7 @@ from .. import ledger
 from ..config import SlopError, load_project
 from ..sync.songdata import CLEAN_LO, SongData, norm_compact
 from . import higgsfield as hf
+from . import hedra
 from . import hosting
 from . import models as reg
 from . import store
@@ -202,6 +203,9 @@ def probe_duration(path: Path) -> float | None:
 def inflight_msg(c: dict) -> str:
     cid = c["id"]
     unk = store.unknown_take(c)
+    if unk and unk.get("provider") == "hedra":
+        return (f"{cid} take {unk['n']}: Hedra outcome unknown, still reserved. Find the job in Hedra, then "
+                f"slop clip poll {cid} --job-id JOB_ID; do not submit again.")
     if unk:
         return (f"{cid} take {unk['n']}: the submit got no clear answer, so it may be running and is counted as spent. Look "
                 "for it at https://openrouter.ai/activity: found -> slop clip poll " + cid + " --job-id JOB_ID; nothing there "
@@ -270,8 +274,16 @@ FRAME_HINT = ("continue from a frame of an earlier take: slop clip frame EARLIER
               "in-sync frame), then pass that file with --start")
 
 
-def choose_start(pdir: Path, cid: str, plate: str | None, explicit: str | None) -> tuple[Path, str, str]:
-    """(path, pixel sha1, note): the first candidate no other clip starts from."""
+def choose_start(pdir: Path, cid: str, plate: str | None, explicit: str | None, *, reuse: bool = False) -> tuple[Path, str, str]:
+    """(path, pixel sha1, note): prefer unused starts; reuse must be explicit."""
+    def imported(p):
+        if p.resolve().is_relative_to(pdir.resolve()):
+            return p
+        import shutil
+        dst = store.clip_folder(pdir, cid) / f"start-{store.file_sha1(p)}{p.suffix.lower()}"
+        shutil.copy2(p, dst)
+        return dst
+
     used = store.used_starts(pdir, exclude=cid)
     if explicit:
         p = Path(explicit)
@@ -279,10 +291,10 @@ def choose_start(pdir: Path, cid: str, plate: str | None, explicit: str | None) 
         if not p.is_file():
             raise SlopError(f"start image not found: {explicit}")
         h = store.image_sha1(p)
-        if h in used:
-            raise SlopError(f"{p.name} is already the start of clip {used[h]}: two clips never start from the same frame. "
-                            f"Use another candidate of the plate (plates/cands/<plate>/), or {FRAME_HINT}.")
-        return p, h, "explicit"
+        if h in used and not reuse:
+            raise SlopError(f"{p.name} is already the start of clip {used[h]}: start reuse is off by default. "
+                            f"Use --reuse-start for an intentional repeat, another candidate, or {FRAME_HINT}.")
+        return imported(p), h, "explicit"
     cands = plate_candidates(pdir, plate)
     if not cands:
         if not plate:
@@ -291,10 +303,10 @@ def choose_start(pdir: Path, cid: str, plate: str | None, explicit: str | None) 
                         "ingest/pick it first (slop plates …) or pass --start IMAGE")
     for k, p in enumerate(cands):
         h = store.image_sha1(p)
-        if h not in used:
-            return p, h, ("the pick" if k == 0 else f"candidate {k + 1}: earlier candidates already start other clips")
+        if reuse or h not in used:
+            return imported(p), h, ("the pick" if k == 0 else f"candidate {k + 1}: earlier candidates already start other clips")
     raise SlopError(f"every candidate of plate {plate!r} already starts another clip (two clips never start from the same "
-                    f"frame). Generate/pick another candidate (slop gen image --plate {plate} …), or {FRAME_HINT}.")
+                    f"frame). Use --reuse-start for an intentional repeat. Generate/pick another candidate (slop gen image --plate {plate} …), or {FRAME_HINT}.")
 
 
 WORD_LO = {"clean": CLEAN_LO}                  # a clean window keeps the words starting in [t0 + .05, t1 - .08)
@@ -499,12 +511,12 @@ def next_id(pdir: Path, kind: str, shot: str | None) -> str:
 
 
 def draft_prompt(pdir: Path, project: dict, song: SongData, *, kind: str, t0: float, dur: float, words: str,
-                 shot: dict, frame: str, style: str, lo: float = -.02, keep: list | None = None) -> str:
+                 shot: dict, frame: str, style: str, lo: float = -.02, keep: list | None = None, allow_turn: bool = False) -> str:
     lead = tpl.lead_words(project)
     kicks, dbs = song.kicks(t0, t0 + dur), song.downbeats_in(t0, t0 + dur)
     if kind == "sung":
         return tpl.sung_prompt(words=words, phrases=song.phrases(t0, t0 + dur, lo=lo, keep=keep), t0=t0, duration=dur,
-                               shot=shot, lead=lead, kicks=kicks, downbeats=dbs, style=style)
+                               shot=shot, lead=lead, kicks=kicks, downbeats=dbs, style=style, allow_turn=allow_turn)
     return tpl.motion_prompt(t0=t0, duration=dur, shot=shot, lead=lead, kicks=kicks, downbeats=dbs, frame=frame, style=style)
 
 
@@ -526,9 +538,12 @@ def _hw_list(tokens: list[dict]) -> list[list]:
 def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: float | None = None, t1: float | None = None,
         song_t0: float | None = None, duration: int | None = None, start: str | None = None, frame: str | None = None,
         style: str | None = None, provider: str | None = None, model: str | None = None, resolution: str | None = None,
-        force: bool = False, window_mode: str | None = None, words: str | None = None) -> dict:
+        force: bool = False, window_mode: str | None = None, words: str | None = None,
+        aspect_ratio: str | None = None, reuse_start: bool = False, allow_turn: bool = False) -> dict:
     if kind not in ("sung", "motion"):
         raise SlopError("--kind must be sung or motion")
+    if allow_turn and kind != "sung":
+        raise SlopError("--allow-turn is for sung clips; motion prompts already allow turns")
     style = style or tpl.default_style(kind)                  # sung: the short form (it copies @Audio1); motion: screenplay
     if style not in tpl.STYLES:
         raise SlopError("--style must be short or screenplay")
@@ -549,6 +564,8 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
     if need[1] <= need[0]:
         raise SlopError(f"empty needed span {need}")
     prov = provider or "openrouter"
+    if aspect_ratio and aspect_ratio not in hedra.ASPECTS:
+        raise SlopError("unsupported aspect ratio")
     warns: list[str] = []
     q_tokens: list | None = None
     if model:
@@ -557,6 +574,8 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
             raise SlopError(f"sung clips need a model that takes an audio reference (bytedance/seedance-2.x); {model} does "
                             "not, so its take could not lip-sync: --model bytedance/seedance-2.5 (or "
                             "bytedance/seedance-2.0-mini for cheap drafts), or make it a motion clip (--kind motion)")
+    elif prov == "hedra":
+        mdl = hedra.MODEL
     elif kind == "sung":
         mdl, note = sung_default_model(project)
         if note and prov == "openrouter":
@@ -606,7 +625,7 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
     if kind == "sung" and frame == "first":
         raise SlopError("sung clips use reference mode (the plate as @Image1 reference): with a first frame OpenRouter "
                         "ignores the audio window (verified). Drop --frame first.")
-    sp, sha, note = choose_start(pdir, cid, shot.get("plate"), start)
+    sp, sha, note = choose_start(pdir, cid, shot.get("plate"), start, reuse=reuse_start)
     if note.startswith("candidate"):
         warns.append(f"start image: {note}")
     window, w2 = cut_window(pdir, cid, wt0, dur, kind, window_mode, quoted=words or None,
@@ -624,13 +643,13 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
     else:
         words = ""
     prompt = draft_prompt(pdir, project, song, kind=kind, t0=wt0, dur=dur, words=words, shot=shot, frame=frame, style=style,
-                          lo=lo, keep=keep)
+                          lo=lo, keep=keep, allow_turn=allow_turn)
     ks = {round(k[0], 3) for k in keep} if keep else None
     clip = {"id": cid, "shot": shot_id, "kind": kind, "status": "draft", "provider": prov,
             "model": mdl, "frame": frame, "start": store.rel(pdir, sp), "start_sha1": sha,
             "refs": [], "videos": [], "song_t0": round(wt0, 3), "needed": [round(need[0], 3), round(need[1], 3)],
-            "words": words, "window": window,
-            "body": {"prompt": prompt, "duration": dur, "resolution": resolution or "720p", "aspect_ratio": aspect(project),
+            "words": words, "window": window, "allow_turn": allow_turn,
+            "body": {"prompt": prompt, "duration": dur, "resolution": resolution or "720p", "aspect_ratio": aspect_ratio or ("adaptive" if prov == "hedra" else aspect(project)),
                      "generate_audio": True},
             "takes": [], "covers": [], "why": (shot.get("notes") or shot.get("action") or f"storyboard shot {shot_id}"),
             "created": store.now(), "hosted": {}, "declined": [], "history": [],
@@ -705,7 +724,7 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
                model: str | None = None, provider: str | None = None, frame: str | None = None, start: str | None = None,
                refs: list[str] | None = None, clear_refs: bool = False, audio: str | None = None,
                audio_mode: str | None = None, generate_audio: bool | None = None, recut: bool = False,
-               why: str | None = None, needed: list[float] | None = None) -> dict:
+               why: str | None = None, needed: list[float] | None = None, aspect_ratio: str | None = None, reuse_start: bool = False, allow_turn: bool = False) -> dict:
     c = store.load(pdir, cid)
     if c.get("status") == "submitted":
         raise SlopError(inflight_msg(c))
@@ -713,6 +732,8 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
     song = SongData(pdir)
     lead = tpl.lead_words(project)
     sung = c["kind"] == "sung"
+    if allow_turn and not sung:
+        raise SlopError("--allow-turn is for sung clips; motion prompts already allow turns")
     if words is not None and not sung:
         raise SlopError("--words is for sung clips (the words the lead sings in the window)")
     if words is not None and requote:
@@ -770,6 +791,10 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
         recut = True
     target_mode = audio_mode or cur_mode
     # ---- simple fields
+    if aspect_ratio:
+        if aspect_ratio not in hedra.ASPECTS:
+            raise SlopError("unsupported aspect ratio")
+        c["body"]["aspect_ratio"] = aspect_ratio; changed.append("aspect_ratio")
     if resolution:
         if resolution not in RESOLUTIONS:
             raise SlopError("--res must be 480p, 720p or 1080p")
@@ -777,9 +802,14 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
     if model:
         c["model"] = model; changed.append("model")
     if provider:
-        if provider not in ("openrouter", "higgsfield"):
-            raise SlopError("--provider must be openrouter or higgsfield")
+        if provider not in ("openrouter", "higgsfield", "hedra"):
+            raise SlopError("--provider must be openrouter, higgsfield or hedra")
+        previous_provider = c.get("provider")
         c["provider"] = provider; changed.append("provider")
+        if provider == "hedra" and previous_provider != "hedra" and not model:
+            c["model"] = hedra.MODEL
+        elif previous_provider == "hedra" and provider != "hedra" and not model:
+            c["model"] = default_model(proj(pdir))
         if provider == "higgsfield" and not sung and c.get("frame") != "first" and not frame:
             warns.append(f"on Higgsfield a motion clip can keep the plate's exact composition AND the audio: slop clip set "
                          f"{cid} --frame first (start_image + audio_references)")
@@ -792,7 +822,7 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
             raise SlopError("sung clips use reference mode: with a first frame OpenRouter ignores the audio window (verified)")
         c["frame"] = frame; changed.append("frame")
     if start:
-        sp, sha, _ = choose_start(pdir, cid, None, start)
+        sp, sha, _ = choose_start(pdir, cid, None, start, reuse=reuse_start)
         c["start"], c["start_sha1"] = store.rel(pdir, sp), sha
         c.pop("start_frame", None); c.get("hosted", {}).pop("start", None); changed.append("start")
     if clear_refs:
@@ -875,10 +905,18 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
                                            words=c.get("words") or "", shot=find_shot(pdir, c.get("shot") or "") or {},
                                            frame=c.get("frame") or "ref",
                                            style=notes.get("style") or tpl.default_style(c["kind"]),
-                                           lo=word_lo(c.get("window")), keep=c.get("her_words"))
+                                           lo=word_lo(c.get("window")), keep=c.get("her_words"),
+                                           allow_turn=c.get("allow_turn", False))
         notes["scaffold"] = c["body"]["prompt"]
         notes.pop("window_changed", None)
         changed.append("prompt scaffold")
+    if allow_turn:
+        c["allow_turn"] = True
+        cur = c["body"]["prompt"]
+        c["body"]["prompt"] = cur.replace(tpl.SUNG_CLOSER, tpl.SUNG_TURN_CLOSER)
+        if notes.get("scaffold") == cur:
+            notes["scaffold"] = c["body"]["prompt"]
+        changed.append("allow_turn")
     was = c.get("status")
     if changed and was in ("locked", "delivered", "failed", "declined"):
         c["status"] = "draft"
@@ -968,8 +1006,12 @@ def lock_problems(pdir: Path, c: dict) -> list[str]:
 @project_hints
 def lock(pdir: Path, cid: str) -> dict:
     c = store.load(pdir, cid)
+    next_step = (f"slop relay job --kind hedra --what quote --clip {cid}" if c.get("provider") == "hedra"
+                 else f"slop clip submit {cid} --yes")
     if c.get("status") == "locked":
-        return {"clip": c, "text": f"{cid} is already locked (ready to submit)"}
+        turn = tpl.turn_warning((c.get("body") or {}).get("prompt") or "") if c.get("kind") == "sung" else None
+        return {"clip": c, "warnings": [turn] if turn else [],
+                "text": f"{cid} is already locked; next: {next_step}" + ("\n  ! " + turn if turn else "")}
     if c.get("status") == "submitted":
         raise SlopError(inflight_msg(c))
     probs = lock_problems(pdir, c)
@@ -979,7 +1021,7 @@ def lock(pdir: Path, cid: str) -> dict:
     store.save(pdir, c)
     warns = lock_warnings(c)
     return {"clip": c, "warnings": warns,
-            "text": f"{cid} locked: ready to submit (slop clip submit {cid} --yes) — estimate: {describe_cost(c)}"
+            "text": f"{cid} locked; next: {next_step} — estimate: {describe_cost(c)}"
                     + "".join("\n  ! " + w for w in warns)}
 
 
@@ -990,13 +1032,19 @@ def lock_warnings(c: dict) -> list[str]:
         return []
     w = tpl.sung_length_warning((c.get("body") or {}).get("prompt") or "")
     done = "Locked anyway" if c.get("status") == "locked" else "Lock and submit still go ahead"
-    return [f"{w}. {done}; to shorten it: slop clip set {c['id']} --prompt-file FILE, then slop clip lock "
+    warnings = [f"{w}. {done}; to shorten it: slop clip set {c['id']} --prompt-file FILE, then slop clip lock "
             f"{c['id']}"] if w else []
+    turn = tpl.turn_warning((c.get("body") or {}).get("prompt") or "")
+    if turn:
+        warnings.append(turn)
+    return warnings
 
 
 # ------------------------------------------------------------------------------------------------ costs
 def clip_cost(c: dict) -> dict:
     b = c.get("body") or {}
+    if c.get("provider") == "hedra":
+        return {"usd": None}
     if c.get("provider") == "higgsfield":
         cr = hf.credits(int(b.get("duration") or 5), b.get("resolution") or "720p")
         return {"credits": cr, "usd": round(cr * hf.USD_PER_CREDIT, 2)}
@@ -1138,7 +1186,9 @@ def preflight(pdir: Path, c: dict, project: dict, *, resolution: str | None = No
     res = resolution or (c.get("body") or {}).get("resolution") or "720p"        # --res applies to this take only
     if no_audio_ref and c.get("kind") == "sung":
         probs.append("a sung clip is never submitted without its audio window (the lips follow it): drop --no-audio-ref")
-    if c.get("provider") == "higgsfield":
+    if c.get("provider") == "hedra":
+        model = c.get("model") or hedra.MODEL
+    elif c.get("provider") == "higgsfield":
         model = hf.MODEL
     else:
         model = c.get("model") or default_model(project)
@@ -1249,7 +1299,10 @@ def dry_run(pdir: Path, c: dict, project: dict, *, resolution: str | None = None
 def submit(pdir: Path, cid: str, *, provider: str | None = None, yes: bool = False, resolution: str | None = None,
            no_audio_ref: bool = False, experimental_data: bool = False, resubmit_unknown: bool = False,
            client: OpenRouter | None = None, dry: bool = False, finalize_from: int | None = None,
-           again: bool = False) -> dict:
+           again: bool = False, hedra_cost: float | None = None,
+           hedra_currency: str | None = None, quote_only: bool = False) -> dict:
+    if quote_only and (finalize_from is not None or dry):
+        raise SlopError("--quote-only cannot be combined with --dry-run or --finalize-from")
     if finalize_from is not None:
         if provider and provider != "higgsfield":
             raise SlopError("--finalize-from finalizes a Higgsfield 480p draft: use --provider higgsfield (or leave "
@@ -1261,16 +1314,27 @@ def submit(pdir: Path, cid: str, *, provider: str | None = None, yes: bool = Fal
     project = proj(pdir)
     flags = ""
     if provider and provider != c.get("provider"):
-        if provider not in ("openrouter", "higgsfield"):
-            raise SlopError("--provider must be openrouter or higgsfield")
+        if provider not in ("openrouter", "higgsfield", "hedra"):
+            raise SlopError("--provider must be openrouter, higgsfield or hedra")
+        previous_provider = c.get("provider")
         c["provider"] = provider
+        if provider == "hedra":
+            c["model"] = hedra.MODEL
+        elif previous_provider == "hedra":
+            c["model"] = default_model(project)
         flags += f" --provider {provider}"
+    if c.get("provider") != "hedra" and (quote_only or hedra_cost is not None or hedra_currency is not None):
+        raise SlopError("--hedra-* options require --provider hedra")
+    if dry and c.get("provider") == "hedra":
+        return hedra.dry_run(pdir, c, resolution=resolution, no_audio_ref=no_audio_ref)
     if dry:
         flags += (f" --res {resolution}" if resolution else "") + (" --no-audio-ref" if no_audio_ref else "")
         return dry_run(pdir, c, project, resolution=resolution, no_audio_ref=no_audio_ref, flags=flags)
     st = c.get("status")
     if st == "submitted":
         unk = store.unknown_take(c)
+        if unk and unk.get("provider") == "hedra":
+            raise SlopError(f"{cid}: Hedra outcome unknown; do not resubmit. Locate the job, then clip poll {cid} --job-id ID")
         if not (unk and resubmit_unknown):
             raise SlopError(inflight_msg(c) if unk else
                             f"{cid} already has a take in flight: slop clip poll {cid} (or slop clip ingest for Higgsfield)")
@@ -1284,12 +1348,15 @@ def submit(pdir: Path, cid: str, *, provider: str | None = None, yes: bool = Fal
         store.save(pdir, c)
     if st != "locked":
         raise SlopError(f"{cid} is '{st}', not locked: spending needs a locked clip — review it, then slop clip lock {cid}")
-    if not (yes or gate_ok(project, c)):
+    if not quote_only and not (yes or gate_ok(project, c)):
         raise SlopError(f"submitting {cid} spends money ({describe_cost(c)}): show the prompt and the estimate to the user and "
                         "re-run with --yes after they agree")
     probs, res, model = preflight(pdir, c, project, resolution=resolution, no_audio_ref=no_audio_ref)
     if probs:
         raise SlopError(f"{cid} is not ready:\n  - " + "\n  - ".join(probs))
+    if c["provider"] == "hedra":
+        return hedra.submit(pdir, c, yes=yes, resolution=res, no_audio_ref=no_audio_ref,
+                            cost=hedra_cost, currency=hedra_currency, quote_only=quote_only)
     if c["provider"] == "higgsfield":
         return _submit_higgsfield(pdir, c, yes=yes, resolution=res)
     send = {**c, "body": {**c["body"], "resolution": res}}
@@ -1527,6 +1594,10 @@ def poll(pdir: Path, cids: list[str] | None = None, *, wait_s: float = 0.0, job_
         if not cids or len(cids) != 1:
             raise SlopError("--job-id attaches one job to one clip: slop clip poll CLIP --job-id JOB_ID")
         c = store.load(pdir, cids[0])
+        if any(t.get("provider") == "hedra" and t.get("status") in ("unknown", "submitted", "requested", "pending")
+               for t in c.get("takes", [])):
+            r = hedra.poll(pdir, c, job_id=job_id)
+            return {"results": [r], "text": r["text"]}
         unk = store.unknown_take(c)
         if not unk:
             if any(t.get("id") == job_id for t in c.get("takes") or []):
@@ -1547,6 +1618,10 @@ def poll(pdir: Path, cids: list[str] | None = None, *, wait_s: float = 0.0, job_
         lines.append(f"{cids[0]}: job {job_id} attached to take {attached}")
     client = client or (OpenRouter() if any(_pending_or(c) for c in clips) else None)
     for c in clips:
+        if any(t.get("provider") == "hedra" and t.get("status") in ("unknown", "submitted", "requested", "pending")
+               for t in c.get("takes", [])):
+            r = hedra.poll(pdir, c)
+            results.append(r); lines.append(r["text"]); continue
         tk = _pending_or(c)
         if not tk:
             hfk = next((t for t in reversed(c.get("takes") or []) if t.get("provider") == "higgsfield"
@@ -1619,8 +1694,13 @@ def _pending_or(c: dict) -> dict | None:
 @project_hints
 def ingest(pdir: Path, cid: str, *, file: str | None = None, url: str | None = None, job_id: str | None = None,
            credits: float | None = None, pending: bool = False, failed: str | None = None, declined: str | None = None,
-           provider: str | None = None, session=None) -> dict:
+           provider: str | None = None, session=None, cost_usd: float | None = None) -> dict:
     c = store.load(pdir, cid)
+    if provider == "hedra" or (provider is None and c.get("provider") == "hedra"):
+        return hedra.ingest(pdir, c, file=file, url=url, job_id=job_id, credits=credits, cost_usd=cost_usd,
+                            pending=pending, failed=failed, declined=declined, session=session)
+    if cost_usd is not None:
+        raise SlopError("--cost-usd is for Hedra results")
     prov = provider or ("higgsfield" if any(t.get("provider") == "higgsfield" and t.get("status") in ("requested", "pending")
                                             for t in c.get("takes") or []) else c.get("provider") or "higgsfield")
     tk = next((t for t in reversed(c.get("takes") or []) if t.get("provider") == prov
@@ -1891,7 +1971,7 @@ def make_cover(pdir: Path, root_id: str, prop: dict, *, lock_it: bool = False, s
     if scaffolded:                                                   # a cover sings: redraft it in the short form
         prompt = tpl.sung_prompt(words=words, phrases=song.phrases(t0, t0 + dur, lo=lo, keep=hw or None), t0=t0, duration=dur,
                                  shot=(find_shot(pdir, root.get("shot") or "") or {}), lead=lead,
-                                 kicks=song.kicks(t0, t0 + dur), downbeats=song.downbeats_in(t0, t0 + dur), style="short")
+                                 kicks=song.kicks(t0, t0 + dur), downbeats=song.downbeats_in(t0, t0 + dur), style="short", allow_turn=parent.get("allow_turn", False))
         note = ("the parent prompt is timestamped for its own window: this cover is drafted in the short sung form (it "
                 "copies @Audio1 far more often); write its line of framing and light")
     elif kept:
@@ -1904,7 +1984,7 @@ def make_cover(pdir: Path, root_id: str, prop: dict, *, lock_it: bool = False, s
     clip = {"id": cid, "shot": root.get("shot"), "kind": "sung", "status": "draft", "provider": parent.get("provider") or "openrouter",
             "model": parent.get("model") or sung_default_model(project)[0], "frame": "ref", "start": store.rel(pdir, sp),
             "start_sha1": sha, **({"start_frame": sf} if sf else {}), "refs": list(parent.get("refs") or []), "videos": [],
-            "song_t0": round(t0, 3), "needed": prop["needed"], "words": words, "window": window,
+            "song_t0": round(t0, 3), "needed": prop["needed"], "words": words, "window": window, "allow_turn": parent.get("allow_turn", False),
             "body": {**(parent.get("body") or {}), "prompt": prompt, "duration": dur},
             "takes": [], "covers": [], "parent": root_id, "after": prop.get("parent"), "why": prop["why"],
             "created": store.now(), "hosted": {}, "declined": [], "history": [],

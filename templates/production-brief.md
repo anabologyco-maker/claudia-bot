@@ -120,6 +120,16 @@ the answers verbatim.
   `slop -p NAME plates ingest inbox/midjourney --batch BATCH`, `slop -p NAME song ingest inbox/suno/FILE`.
 - Paid steps (OpenRouter: API stills, clips, songs) read OPENROUTER_API_KEY from your environment; never print it or
   write it anywhere. Every spend still needs the director's yes (checkpoint 5) and stays under the caps.
+- Hedra accepts image references for general motion as well as sung clips. Inspect uploaded photos and
+  follow the owner's requested subject/action; do not assume a person, gender, pose or turn. Use motion
+  for general animation, sung only when singing/lip sync is requested for a selected performer.
+- Hedra is an optional MCP clip provider. Read {{TOOLKIT}}/docs/63-hedra.md. Prepare/lock with --provider hedra,
+  then `slop -p NAME relay job --kind hedra --what quote --clip CLIP`. Grok uploads and returns a quote.
+  Ask the owner to approve the prompt and cost; after their yes set the matching Hedra cap, reserve with
+  `slop -p NAME clip submit CLIP --hedra-cost COST --hedra-currency USD|credits --yes`, then post
+  `slop -p NAME relay job --kind hedra --what generate --clip CLIP`. Grok uses its Hedra connector; no API key.
+  End the turn while the job runs. Its completion wakes you with the ingested video; run clip sync and continue.
+  Never duplicate an open job. Unknown outcome: recover the provider id; never start a replacement generation.
 - Higgsfield is Grok's connector, not yours, and no relay job runs it yet: never plan a Higgsfield step; a sung
   window OpenRouter cannot make is cut away or shown without lip sync.
 - Analysis, depth maps and every other heavy step run on this computer's CPU (a home-GPU link comes in a later

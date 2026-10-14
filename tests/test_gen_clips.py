@@ -82,13 +82,13 @@ def test_new_sung_clip_drafts_window_words_and_prompt(env):
     assert rc == 0 and out2["created"] is False and out2["clip_id"] == "W01"
 
 
-def test_two_clips_never_start_from_the_same_frame(env):
+def test_two_clips_do_not_reuse_starts_without_override(env):
     run(env, "clip", "new", "s002", "--kind", "sung")
     rc, out = run(env, "clip", "new", "s003", "--kind", "sung")
     assert rc == 0
     assert out["clip"]["start"] == "plates/cands/hero-cu/2.png"      # the pick is taken: the next candidate
     assert any("candidate 2" in w for w in out["warnings"])
-    with pytest.raises(SlopError, match="never start from the same frame"):
+    with pytest.raises(SlopError, match="reuse is off by default"):
         clips.new(env, "s004", "motion", start=str(env / "plates/cands/hero-cu/1.png"))
 
 

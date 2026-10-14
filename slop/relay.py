@@ -274,11 +274,18 @@ def _jobs(rd: Path, open_only: bool = True) -> list[dict]:
             continue
         st = done.get(r.get("job")) or {}
         j = {**r, "status": st.get("status") or "queued"}
-        for k in ("reason", "ended"):
+        for k in ("reason", "ended", "hedra_state", "provider_job_id"):
             if st.get(k):
                 j[k] = st[k]
         if st.get("files"):
             j["result_files"] = st["files"]
+        if j.get("job_kind") == "hedra" and j.get("what") == "generate" and j["status"] == "queued":
+            from .gen import store as clip_store
+            c = clip_store.load(Path(j["project_dir"]), j["clip"])
+            tk = next((t for t in c["takes"] if t["n"] == j.get("take")), {})
+            if tk.get("relay_attempted"):
+                j["hedra_state"] = "pending" if tk.get("id") else "started"
+                j["provider_job_id"] = tk.get("id")
         if not open_only or j["status"] == "queued":
             out.append(j)
     return out
@@ -594,15 +601,17 @@ def cmd_send(a) -> dict:
     return deliver(_words(a, "send"), a.sender)
 
 
-def deliver(text: str, who: str, job_update: tuple | None = None) -> dict:
+def deliver(text: str, who: str, job_update: tuple | None = None, *, optional_runner: bool = False) -> dict:
     """Append a message to the inbox (director words also to decisions.md, dated) and start a turn when nothing runs.
     job_update = (job id, record): written to jobs.json under the same lock."""
     wd, rd = _dirs()
-    cfg = _cfg(rd)
+    cfg = _cfg(rd, need=not optional_runner)
     claim = None
     with _lock(rd):
         if job_update:
             jobs = _read_json(rd / "jobs.json")
+            if (jobs.get(job_update[0]) or {}).get("status") in ("done", "failed", "declined", "cancelled"):
+                return {"ok": True, "job": job_update[0], "text": f"{job_update[0]}: already closed"}
             jobs[job_update[0]] = job_update[1]
             _write_json(rd / "jobs.json", jobs)
         mid = _next_id(rd / "inbox.jsonl")
@@ -614,17 +623,21 @@ def deliver(text: str, who: str, job_update: tuple | None = None) -> dict:
             util.append_text(dl, head + f"- {util.stamp()} - [director, relay #{mid}] "
                              + re.sub(r"\s*\n\s*", " / ", text.strip()) + "\n")
         run = _runner(rd)
-        if not run["alive"]:
+        if cfg.get("engine") and not run["alive"]:
             claim = uuid.uuid4().hex[:10]
             _write_json(rd / "runner.json", {"state": "starting", "claim": claim, "since": util.iso_now(),
                                              "since_ts": time.time(), "since_mono": time.monotonic()})
     _log(rd, f"in #{mid} from {who}: {text[:120]}")
-    out = {"ok": True, "id": mid, "from": who, "engine": cfg["engine"], "next": "slop --json relay read --wait 200"}
+    out = {"ok": True, "id": mid, "from": who, "engine": cfg.get("engine"), "next": "slop --json relay read --wait 200"}
+    if not cfg.get("engine"):
+        return {**out, "started": False, "wake_pending": True, "next": "slop --json relay inbox",
+                "text": f"message #{mid} and job result saved. No production runner configured; "
+                        "read relay inbox and continue manually. Automatic wake-up needs relay setup."}
     if claim:
         try:
             s = _start_runner(wd, rd, claim)
         except SlopError as e:
-            return {**out, "ok": False, "error": str(e),
+            return {**out, "ok": optional_runner, "started": False, "wake_pending": True, "error": str(e),
                     "text": f"message #{mid} saved, but the production did not start: {e}"}
         out.update(started=True, job=s["id"], text=f"message #{mid} passed on; the production started a turn "
                    f"(job {s['id']}). Next: slop --json relay read --wait 200")
@@ -774,7 +787,20 @@ def cmd_job(a) -> dict:
     base = _save_base(a, wd)
     rec: dict = {"kind": "job", "job_kind": a.kind, "what": a.what, "note": a.note}
     adjusted: list[str] = []
-    if a.kind == "midjourney":
+    if a.kind == "hedra":
+        from .gen import hedra_relay
+        base = resolve_project(getattr(a, "project", None))
+        # Repeated posts reuse the open job; they never create a second generation.
+        with _lock(rd):
+            prior = next((j for j in _jobs(rd) if j.get("job_kind") == "hedra"
+                          and j.get("project_dir") == str(base.resolve()) and j.get("clip") == a.clip), None)
+            if prior:
+                if prior["what"] != a.what:
+                    raise SlopError(f"{prior['job']} is an open {prior['what']} job for this clip; "
+                                    "report or cancel it before posting a different phase")
+                return {"job": prior["job"], "text": hedra_relay.instruction(prior)}
+        rec.update(hedra_relay.prepare(base, a.clip, a.what))
+    elif a.kind == "midjourney":
         if not a.text:
             raise SlopError("a midjourney job needs its prompts: --text '<one full prompt with its parameters>', once "
                             "per prompt (each becomes its own Midjourney job of four images)")
@@ -844,13 +870,28 @@ def cmd_job(a) -> dict:
     for e in rec.get("expect") or []:
         Path(e).parent.mkdir(parents=True, exist_ok=True)
     with _lock(rd):
+        if a.kind == "hedra":
+            prior = next((j for j in _jobs(rd) if j.get("job_kind") == "hedra"
+                          and j.get("project_dir") == rec["project_dir"] and j.get("clip") == a.clip), None)
+            if prior:
+                if prior["what"] != a.what:
+                    raise SlopError(f"{prior['job']} is an open {prior['what']} job for this clip; "
+                                    "report or cancel it before posting a different phase")
+                return {"job": prior["job"], "text": hedra_relay.instruction(prior)}
         oid = _next_id(rd / "outbox.jsonl")
         jid = job_id(oid)
+        if a.kind == "hedra":
+            # Each job owns an immutable request snapshot; later quote attempts cannot overwrite it.
+            request = _read_json(Path(rec["request_file"]))
+            snapshot = base / "clips" / a.clip / f"hedra-relay-{jid}.json"
+            _write_json(snapshot, request)
+            rec["request_file"] = str(snapshot.resolve())
         rec.update(id=oid, seq=_seq(rd), job=jid, ts=util.iso_now(), t=round(time.time(), 3), save=str(save),
                    name=a.name or jid, files=[], turn=_turn_no())
         _append(rd / "outbox.jsonl", {k: v for k, v in rec.items() if v is not None})
     _log(rd, f"out #{oid} job {jid} ({a.kind}{' ' + a.what if a.what else ''})")
-    who = "Grok gives it to the person" if a.kind == "person" else "Grok runs it in its own browser"
+    who = ("Grok uses the Hedra MCP connector" if a.kind == "hedra" else
+           "Grok gives it to the person" if a.kind == "person" else "Grok runs it in its own browser")
     extra = ""
     if a.kind == "midjourney":
         extra = (f" Personalization: {'on (Grok presses the P button)' if rec['personalize'] else 'off'}."
@@ -931,6 +972,8 @@ def cmd_done(a) -> dict:
     """(Grok) a job's files are saved: mark it done and tell the production (a turn starts when it is idle)."""
     wd, rd = _dirs()
     j = _open_job(rd, a.job)
+    if j.get("job_kind") == "hedra":
+        raise SlopError("use relay hedra JOB --action quote|complete|failed so the clip and ledger stay in sync")
     files, missing = [], []
     for f in a.file or []:
         hit = _abs_file(f, Path(j.get("save") or wd), wd)
@@ -968,6 +1011,10 @@ def cmd_cancel(a) -> dict:
     it. From Grok (the person said so): the production hears it."""
     _, rd = _dirs()
     j = _open_job(rd, a.job)
+    if j.get("job_kind") == "hedra":
+        from .gen import hedra_relay
+        with _lock(rd):
+            hedra_relay.cancel(j)
     reason = (a.reason or "").strip()
     rec = {"status": "cancelled", "reason": reason or None, "ended": util.iso_now()}
     if os.environ.get("SLOP_RELAY_TURN"):              # the production's own job: it knows
@@ -977,7 +1024,8 @@ def cmd_cancel(a) -> dict:
             _write_json(rd / "jobs.json", jobs)
         _log(rd, f"job {j['job']} cancelled by the production" + (f": {reason}" if reason else ""))
         return {"job": j["job"], "status": "cancelled", "text": f"job {j['job']} cancelled: Grok will not run it"}
-    out = deliver(f"[grok] {j['job']} cancelled" + (f": {reason}" if reason else ""), "grok", (j["job"], rec))
+    out = deliver(f"[grok] {j['job']} cancelled" + (f": {reason}" if reason else ""), "grok", (j["job"], rec),
+                  optional_runner=j.get("job_kind") == "hedra")
     out.update(job=j["job"], status="cancelled", text=f"job {j['job']} cancelled; " + out["text"])
     return out
 
@@ -986,6 +1034,8 @@ def cmd_fail(a) -> dict:
     """(Grok) a job could not be done: mark it failed (or declined) and tell the production."""
     _, rd = _dirs()
     j = _open_job(rd, a.job)
+    if j.get("job_kind") == "hedra":
+        raise SlopError("use relay hedra JOB --action failed with the provider result; unknown outcomes stay open")
     status = "declined" if a.declined else "failed"
     text = (f"[grok] {j['job']} declined by the service (final for that image on that service): {a.reason}"
             if a.declined else f"[grok] {j['job']} failed: {a.reason}")
@@ -1012,8 +1062,8 @@ def _render_item(r: dict) -> str:
 
 JOB_FIELDS = ("id", "job", "job_kind", "what", "prompt", "image", "aspect", "seconds", "save", "name", "note", "text",
               "expect", "title", "style", "lyrics", "exclude", "instrumental", "url", "personalize", "plates",
-              "expect_count",
-              "status", "ts")
+              "expect_count", "project_dir", "clip", "take", "request_file", "fingerprint",
+              "hedra_state", "provider_job_id", "status", "ts")
 SKILL_FOR = {"grok-imagine": "grok-imagine", "midjourney": "midjourney", "suno": "suno"}
 
 
@@ -1024,7 +1074,7 @@ def _job_item(j: dict) -> dict:
 def _render_job(j: dict) -> str:
     s = f"job {j['job']} ({j.get('job_kind')}{', ' + j['what'] if j.get('what') else ''}): {j.get('status')}"
     for k in ("prompt", "image", "aspect", "seconds", "url", "title", "style", "exclude", "instrumental", "plates",
-              "save", "name", "note"):
+              "save", "name", "note", "clip", "request_file", "hedra_state", "provider_job_id"):
         if j.get(k) not in (None, "", [], False):
             s += f"\n   {k}: {', '.join(j[k]) if isinstance(j[k], list) else j[k]}"
     if j.get("lyrics"):
@@ -1062,7 +1112,10 @@ def _grok_next(items: list, prod: dict, jobs: list) -> str:
             steps[-1] += (" (send " + ", ".join(Path(f).name for f in big) + " as Google Drive links: skill drive)")
     for j in jobs:
         k = j.get("job_kind")
-        if k in SKILL_FOR or k == "browser":
+        if k == "hedra":
+            from .gen import hedra_relay
+            steps.append(hedra_relay.instruction(j))
+        elif k in SKILL_FOR or k == "browser":
             how = (f"skill {SKILL_FOR[k]}" if k in SKILL_FOR else
                    f"your browser at {j.get('url') or 'the page its note names'}, doing what its note says")
             if k == "midjourney":
@@ -1092,9 +1145,15 @@ def _grok_next(items: list, prod: dict, jobs: list) -> str:
     elif s == "queued":
         steps.append("run `slop --json relay send 'continue' --from grok` (messages wait, but no turn runs)")
     elif s == "not set up":
-        steps.append("run `slop --json relay setup` first")
+        if any(j.get("job_kind") == "hedra" for j in jobs):
+            steps.append("Hedra jobs can finish without a production runner. Read `slop relay inbox` afterward; "
+                         "`slop relay setup` is only needed for automatic production wake-up")
+        else:
+            steps.append("run `slop --json relay setup` first")
     else:
         steps.append(f"wait for the person's next words and pass them verbatim with {send}")
+    if any(j.get("job_kind") == "hedra" for j in jobs):
+        return "\n".join(f"{i}. {step[0].upper() + step[1:]}" for i, step in enumerate(steps, 1))
     out = steps[0][0].upper() + steps[0][1:]
     for st in steps[1:]:
         out += ", then " + st
@@ -1890,8 +1949,9 @@ def register(sub) -> None:
     p = add("job", help="(the production) ask Grok for browser work, all of it in Grok's own signed-in browser "
                         "(--kind grok-imagine | midjourney | suno | browser); --kind person only for what only a "
                         "person can do")
-    p.add_argument("--kind", choices=["grok-imagine", "midjourney", "suno", "browser", "person"], required=True)
-    p.add_argument("--what", help="grok-imagine: still | clip (others: a short label, e.g. plates, song)")
+    p.add_argument("--kind", choices=["grok-imagine", "midjourney", "suno", "browser", "person", "hedra"], required=True)
+    p.add_argument("--what", help="grok-imagine: still | clip; hedra: quote | generate")
+    p.add_argument("--clip", help="hedra: locked clip id in the selected project")
     p.add_argument("--prompt", help="grok-imagine: the prompt, verbatim")
     p.add_argument("--prompt-file", help="grok-imagine: read the prompt from this file")
     p.add_argument("--image", help="grok-imagine: a start image (must exist)")
@@ -1916,6 +1976,17 @@ def register(sub) -> None:
                         "project's mj.personalize, else on); a profile code never goes into a prompt")
     p.add_argument("--expect", action="append", help="person: where their upload is saved (repeatable)")
     p.set_defaults(func=cmd_job)
+
+    p = add("hedra", help="(Grok) report a Hedra connector quote, claim a generation once, or return its result")
+    p.add_argument("job", help="Hedra relay job J-NNNN")
+    p.add_argument("--action", choices=["quote", "start", "pending", "complete", "failed"], required=True)
+    p.add_argument("--cost", type=float, help="confirmed estimate or net cost; always include currency")
+    p.add_argument("--currency", choices=["USD", "credits"])
+    p.add_argument("--job-id", help="Hedra job.job_id")
+    p.add_argument("--url", help="completed video URL")
+    p.add_argument("--reason", help="confirmed failure; never use for an uncertain submission")
+    from .gen.hedra_relay import report as report_hedra
+    p.set_defaults(func=report_hedra)
 
     p = add("inbox", help="(the production) new messages from the director and Grok, marked read")
     p.set_defaults(func=cmd_inbox)

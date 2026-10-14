@@ -1546,12 +1546,13 @@ def ledger_summary(pdir: Path, proj: dict) -> dict:
     void = voided(rows)
     asked = _requested_keys(pdir)
     by: dict[str, dict] = {}
+    active_hedra, confirmed_in_ledger = set(), set()
     for i, r in enumerate(rows):
         prov = str(r.get("provider") or "?")
         b = by.setdefault(prov, {"calls": 0, "est_usd": 0.0, "real_usd": 0.0, "credits": 0.0,
                                  "declined": 0, "failed": 0, "other": 0})
         u = r.get("units") if isinstance(r.get("units"), dict) else {}
-        b["calls"] += 0 if u.get("settles") else 1           # a settlement closes a call; it is not another one
+        b["calls"] += 0 if u.get("settles") or u.get("cost_confirmation") else 1           # a settlement closes a call; it is not another one
         st = r.get("status")
         if i in void:
             continue
@@ -1561,6 +1562,10 @@ def ledger_summary(pdir: Path, proj: dict) -> dict:
             if isinstance(r.get("real_usd"), (int, float)):
                 b["real_usd"] += float(r["real_usd"])
             k = (prov, str(u.get("clip")), str(u.get("take")))
+            if prov == "hedra" and u.get("clip") is not None and u.get("take") is not None:
+                active_hedra.add(k)
+                if isinstance(r.get("real_usd"), (int, float)):
+                    confirmed_in_ledger.add(k)
             if k in asked and r.get("credits"):
                 b["requested"] = b.get("requested", 0.0) + float(r["credits"])
                 b.setdefault("requested_takes", [])
@@ -1572,6 +1577,19 @@ def ledger_summary(pdir: Path, proj: dict) -> dict:
             b["failed"] += 1
         else:
             b["other"] += 1
+    # Older Hedra ingests saved confirmed cost only on the take. Read it without
+    # rewriting history, and never add it again when a ledger confirmation exists.
+    if active_hedra - confirmed_in_ledger:
+        import math
+        for cid, c in clip_docs(pdir):
+            for tk in (c or {}).get("takes", []):
+                key = ("hedra", str(cid), str(tk.get("n")))
+                cost = tk.get("cost_usd")
+                if (key in active_hedra - confirmed_in_ledger and tk.get("provider") == "hedra"
+                        and tk.get("currency") == "USD" and isinstance(cost, (int, float))
+                        and not isinstance(cost, bool) and math.isfinite(cost) and cost >= 0):
+                    by["hedra"]["real_usd"] += cost
+                    confirmed_in_ledger.add(key)
     for b in by.values():
         for k in ("est_usd", "real_usd", "credits", "requested"):
             if k in b:
@@ -1586,7 +1604,11 @@ def ledger_summary(pdir: Path, proj: dict) -> dict:
         "total_est_usd": round(sum(b["est_usd"] for b in by.values()), 4),
         "budget": {"openrouter_usd": cap_usd, "openrouter_left_usd": round(cap_usd - or_est, 4) if cap_usd else None,
                    "higgsfield_credits": cap_cr, "higgsfield_left": round(cap_cr - hf_cr, 2) if cap_cr else None,
-                   "confirm_over_usd": budget.get("confirm_over_usd")},
+                   "hedra_usd": float(budget.get("hedra_usd") or 0),
+                   "hedra_credits": float(budget.get("hedra_credits") or 0),
+                   "confirm_over_usd": budget.get("confirm_over_usd"),
+                   "uncapped": {key: not bool(float(budget.get(key) or 0)) for key in
+                                ("openrouter_usd", "higgsfield_credits", "hedra_usd", "hedra_credits")}},
     }
 
 
@@ -1714,6 +1736,10 @@ def _repeat_lines(nx: dict) -> list[str]:
             "      then fix the cause (or the input it complains about) before starting it again"]
 
 
+def _cap_text(value, unit):
+    return f"{value:g} {unit}" if value else "no cap (0 = unlimited)"
+
+
 def next_lines(pdir: Path, nx: dict, offer_next: bool = True) -> list[str]:
     """The 'next:' block of `slop status` (and of `slop next` when it stops)."""
     lines = [f"next: {nx['do']}"]
@@ -1758,8 +1784,12 @@ def cmd_status(args) -> dict:
     or_ = sp["by_provider"].get("openrouter", {})
     hf = sp["by_provider"].get("higgsfield", {})
     lines.append(f"spend (ledger estimate): openrouter {util.money(or_.get('est_usd', 0))} of "
-                 f"{util.money(b['openrouter_usd'])} cap | higgsfield {hf.get('credits', 0):g} of "
-                 f"{b['higgsfield_credits']:g} credits" + _requested_note(hf) + f"   (real spend: {_pcmd(pdir, 'spend')})")
+                 f"{_cap_text(b['openrouter_usd'], 'USD')} cap | higgsfield {hf.get('credits', 0):g} of "
+                 f"{_cap_text(b['higgsfield_credits'], 'credits')}" + _requested_note(hf) + f"   (real spend: {_pcmd(pdir, 'spend')})")
+    hd = sp["by_provider"].get("hedra", {})
+    lines.append(f"Hedra: {hd.get('est_usd', 0):g} USD / {hd.get('credits', 0):g} credits; "
+                 f"USD cap: {_cap_text(b['hedra_usd'], 'USD')}; "
+                 f"credit cap: {_cap_text(b['hedra_credits'], 'credits')}")
     if sp["bad_lines"]:
         lines.append(f"WARNING: ledger.jsonl has {sp['bad_lines']} unreadable lines")
     if st["jobs"]:
@@ -1984,7 +2014,9 @@ def cmd_lead(args) -> dict:
         if changes.get("none") is True:
             text = "no lead character in this video" + (f"; {text}" if len(changes) > 1 else "")
         dec = append_decision(pdir, text, by=args.by)
-    show = {f: lead.get(f, "") for f in LEAD_FIELDS}
+    from .gen.templates import lead_words
+    effective = lead_words(proj)
+    show = {f: lead.get(f) or effective.get(f, "") for f in LEAD_FIELDS}
     asked = bool(args.none) or any(getattr(args, f, None) is not None for f in LEAD_FIELDS)
     lines = [("updated: " + ", ".join(changes) + " (logged in DECISIONS.md)") if changes else
              ("no change" if asked else "the lead:")]
@@ -2135,13 +2167,13 @@ def validate_setting(key: str, v):
             return v
         raise SlopError(f"lead.{sub} is not a lead key: lead.{', lead.'.join(LEAD_TEXT)}, lead.pronoun, lead.none")
     if top == "budget":
-        if sub in ("openrouter_usd", "confirm_over_usd"):
+        if sub in ("openrouter_usd", "hedra_usd", "confirm_over_usd"):
             return _num(key, v, 0, 10000)
-        if sub == "higgsfield_credits":
+        if sub in ("higgsfield_credits", "hedra_credits"):
             return _num(key, v, 0, 1_000_000)
         if sub == "motion_s":
             return _num(key, v, 0, 3600)
-        raise SlopError(f"budget.{sub} is not a budget key: budget.openrouter_usd, budget.higgsfield_credits, "
+        raise SlopError(f"budget.{sub} is not a budget key: budget.openrouter_usd, budget.higgsfield_credits, budget.hedra_usd, budget.hedra_credits, "
                         "budget.confirm_over_usd, budget.motion_s")
     if top == "models":
         if sub == "pin":
@@ -2200,8 +2232,8 @@ def _money_guard(proj: dict, key: str, had: bool, old, new) -> str | None:
     """Why this budget change loosens the owner's money guard (a cap up or removed, confirm_over_usd up, more paid
     clip seconds), or None (a cap lowered, or not a guard). The owner decides those, never the bot alone."""
     sub = key.split(".", 1)[1] if key.startswith("budget.") else None
-    if sub in ("openrouter_usd", "higgsfield_credits"):
-        unit = "$" if sub == "openrouter_usd" else ""
+    if sub in ("openrouter_usd", "higgsfield_credits", "hedra_usd", "hedra_credits"):
+        unit = "$" if sub.endswith("_usd") else ""
         cap_old = float(old) if had and old else float("inf")             # 0 / unset = no cap (ledger.check_budget)
         cap_new = float(new) if new else float("inf")
         if cap_new > cap_old:
@@ -2364,6 +2396,10 @@ def cmd_spend(args) -> dict:
             rows = [[p, b["calls"], util.money(b["est_usd"]), f"{b['credits']:g}", b["declined"], b["failed"]]
                     for p, b in sorted(led["by_provider"].items())]
             lines.append(util.table(rows, ["provider", "calls", "est $", "credits", "declined", "failed"]))
+            hd = led["by_provider"].get("hedra")
+            if hd is not None:
+                lines.append(f"Hedra confirmed USD from recorded takes: {util.money(hd['real_usd'])} "
+                             "(unconfirmed costs remain estimates; credits are not converted)")
             hf = led["by_provider"].get("higgsfield") or {}
             if hf.get("requested"):
                 rq = hf.get("requested_takes") or []
@@ -2379,6 +2415,9 @@ def cmd_spend(args) -> dict:
         lines.append(f"budget: openrouter cap {util.money(bud['openrouter_usd'])} (left ~{util.money(bud['openrouter_left_usd'])})"
                      f" | higgsfield cap {bud['higgsfield_credits']:g} credits (left ~{bud['higgsfield_left']})"
                      f" | confirm over {util.money(bud['confirm_over_usd'])}")
+        if "hedra" in led["by_provider"] or bud["hedra_usd"] or bud["hedra_credits"]:
+            lines.append(f"Hedra caps: {_cap_text(bud['hedra_usd'], 'USD')} / {_cap_text(bud['hedra_credits'], 'credits')}; "
+                         "unknown or unconfirmed refunds retain their estimate")
         if led["bad_lines"]:
             lines.append(f"WARNING: ledger.jsonl has {led['bad_lines']} unreadable lines")
     else:

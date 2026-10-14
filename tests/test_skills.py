@@ -48,7 +48,7 @@ PROJECTLESS = {("new",), ("projects",), ("doctor",), ("gen", "models"), ("gen", 
                ("onboard", "next"), ("onboard", "status"), ("onboard", "mark"), ("onboard", "set"), ("agents",), ("gpu",),
                ("relay",), ("update",)}
 PROJECTLESS_IN = {"setup-agents/SKILL.md": {("job", "wait")}}
-FILL = {"FILE": "x.wav", "CLIP": "c01", "SHOT": "s001", "PLATE": "p001", "ID": "j1", "URL": "https://x.test/a",
+FILL = {"USD": "USD", "UNIT": "credits", "FILE": "x.wav", "CLIP": "c01", "SHOT": "s001", "PLATE": "p001", "ID": "j1", "URL": "https://x.test/a",
         "LINK": "https://x.test/a", "TITLE": "t", "NAME": "demo", "BATCH": "b1", "SLUG": "s", "DIR": "d", "RULE": "texture",
         "ENGINE": "claude", "JOB": "0123abcd", "PROFILE": "audio", "SECTION": "intro", "MODE": "native", "CODE": "abc12"}
 
@@ -73,7 +73,7 @@ def test_recipe_matches_the_template_schema(built):
     recipe, _, _ = built
     assert set(recipe) == {"profile", "memory", "skills", "routines", "plugins", "gettingStarted"}
     assert recipe["profile"]["name"] == "Claudia" and recipe["profile"]["description"].strip()
-    assert [s["name"] for s in recipe["skills"]] == BR.ORDER and len(BR.ORDER) == 10
+    assert [s["name"] for s in recipe["skills"]] == BR.ORDER and len(BR.ORDER) == 11
     assert "setup-gpu" not in BR.ORDER and (SKILLS / "setup-gpu" / "SKILL.md").is_file(), "parked, not shipped"
     for s in recipe["skills"]:
         assert set(s) == {"name", "description", "content"} and all(s.values())

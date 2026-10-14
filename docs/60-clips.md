@@ -869,3 +869,18 @@ Note that a take of this window from that round held 99 % of its sung seconds in
 | Action reversed or cut short | no end state | name the end state |
 | Headcount changes | unstated | state the exact number |
 | Ledger total ≠ bill | estimates, declines, refunds | real spend from the provider only |
+
+### Intentional start-image reuse
+
+Use `clip new ... --reuse-start` with a new clip id to intentionally reuse a plate for another clip. `clip set CLIP --start IMAGE --reuse-start` permits the same explicit override.
+Without it, the unused-start selection rule still applies. External start images are copied unchanged
+into the clip folder and saved with project-relative paths.
+
+### Lead wording and optional turns
+
+The she/her examples above use Claudia as the lead. Actual prompts must use the configured lead's
+pronoun, noun and possessive from `slop lead` (he/his, she/her, they/their, or custom wording); use
+"Only he sings" or "Only they sing" as appropriate. `clip new/set --allow-turn` replaces the default
+no-head-turns closer with "One continuous shot, no cuts.". The writer still supplies the action and
+timing. Lock warns on conflicting turn instructions. A moving or occluded mouth may reduce lip-sync
+accuracy; measure the take. No automatic turn detection or guaranteed accuracy penalty is assumed.

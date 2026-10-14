@@ -20,7 +20,7 @@ from slop.onboard import state as st
 FAKE_KEY = "sk-or-v1-THISISAFAKEKEYFORTESTSONLY0123"
 ALL_MODULES = list(cli.MODULES)
 REAL = {n: getattr(probes, n) for n in ("doctor", "agents", "gpu", "setup_running")}
-N_ITEMS = 30
+N_ITEMS = 31
 
 
 @pytest.fixture(autouse=True)

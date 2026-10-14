@@ -374,3 +374,5 @@ new take had her head to boots).
 | A take's soundtrack is the song but the mouth is off | rare; check the review video | trust the eyes over the number: mark the span unsynced |
 | Sync figure looks good but the take is wrong (off-model, wrong action) | sync ≠ quality | QA the frames too (`60-clips.md` §10) |
 | Many covers, still gaps | provider/framing unsuited | stop covering; cut away; consider a frontal CU window on the other provider |
+
+For lead pronouns and optional turns, see [Lead wording and optional turns](60-clips.md#lead-wording-and-optional-turns).

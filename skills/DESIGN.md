@@ -95,7 +95,7 @@
    in front of it) → fix-the-source edits; API path (`slop gen image`) for Quick tier.
 10. `clips` — prompt book written in ONE context: screenplay for acting and motion, short for copy: sung clips on the
     short sung form (docs/60 §4.0: the head quoting every word, one line of framing and light, at most 2 timed beats,
-    then `One continuous shot, no cuts, no head turns. Only she sings. No text, letters or logos.`, about 90 words; in
+    then `One continuous shot, no cuts, no head turns. Only <lead pronoun> <sings/sing>. No text, letters or logos.`, about 90 words; in
     the Studio run long screenplays re-sang instead of copying, c01 0 % → 78 %), screenplays
     (timestamps on real word/hit times) for motion clips and the board; sung plates keep the mouth clear (no microphone,
     hand or hair) → owner reads book →
@@ -152,3 +152,5 @@ quotes, never `"<...>"`), gettingStarted ∈ skills and plugins = [Higgsfield]. 
 `--plugin-id ID` overrides it and `--release` refuses the placeholder. `tests/test_skills.py` also parses every `slop`
 command in the skills with the real router, checks every doc path and § section they point to, and runs the free
 commands of the lead-plate and quoting rules in a temporary project.
+
+Use the effective lead fields from `slop lead`: he/his, she/her, they/their ("they sing"), or the configured noun/possessive. Fill the pronoun and verb placeholders; never copy them literally. A turn is opt-in with `clip new/set --allow-turn`, which removes the default "no head turns" closer. Review the action and re-lock/requote any changed prompt. A moving or hidden mouth may reduce sync; measure the result rather than promising an accuracy penalty or successful turn.
