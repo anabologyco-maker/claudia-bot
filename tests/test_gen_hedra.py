@@ -179,3 +179,48 @@ def test_male_lead_prompt_uses_configured_pronoun():
     prompt = tpl.sung_prompt(words="city lights", phrases=[], t0=0, duration=4,
                              shot={}, lead=lead, kicks=[], downbeats=[])
     assert "He lip-syncs" in prompt and "the man" in prompt.lower() and "she" not in prompt.lower()
+
+
+def test_estimate_excludes_generation_idempotency_key(env, tmp_path):
+    cid = ready(env, tmp_path)
+    rc, out = run(env, 'clip', 'submit', cid, '--yes', '--hedra-cost', '.6', '--hedra-currency', 'USD')
+    assert rc == 0, out
+    req = json.loads(Path(out['request_file']).read_text())
+    assert req['request']['idempotency_key']
+    assert 'idempotency_key' not in req['estimate']['input']
+    assert req['estimate']['input'] == {k: v for k, v in req['request'].items() if k != 'idempotency_key'}
+    dry = run(env, 'clip', 'submit', cid, '--dry-run')[1]
+    assert '--quote-only' not in dry['text'] and 'resume' in dry['text']
+
+
+def test_reuse_start_opt_in_and_external_import(env, tmp_path):
+    cid = ready(env, tmp_path)
+    original = store.absp(env, store.load(env, cid)['start'])
+    external = tmp_path / 'outside.png'
+    external.write_bytes(original.read_bytes())
+    args = ('clip', 'new', 's004', '--id', 'repeat', '--kind', 'motion', '--provider', 'hedra', '--start', str(external))
+    assert run(env, *args)[0] != 0
+    rc, out = run(env, *args, '--reuse-start')
+    assert rc == 0, out
+    saved = out['clip']['start']
+    assert not Path(saved).is_absolute()
+    external.unlink()
+    assert (env / saved).read_bytes() == original.read_bytes()
+    # set supports the same deliberate override.
+    assert run(env, 'clip', 'set', 'repeat', '--start', str(original))[0] != 0
+    assert run(env, 'clip', 'set', 'repeat', '--start', str(original), '--reuse-start')[0] == 0
+
+
+def test_missing_links_dry_run_does_not_suggest_quote(env, tmp_path):
+    cid = ready(env, tmp_path)
+    c = store.load(env, cid); c['hosted'] = {}; store.save(env, c)
+    out = run(env, 'clip', 'submit', cid, '--dry-run')[1]
+    assert 'gen host' in out['text'] and '--quote-only' not in out['text']
+
+
+def test_status_labels_uncapped_hedra(env, tmp_path):
+    ready(env, tmp_path)
+    rc, out = run(env, 'status')
+    assert rc == 0, out
+    assert 'USD cap: no cap (0 = unlimited)' in out['text']
+    assert out['spend']['budget']['hedra_usd'] == 0

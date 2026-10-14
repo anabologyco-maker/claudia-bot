@@ -141,3 +141,62 @@ def test_completion_recovers_if_notification_was_interrupted(rig, monkeypatch):
     out = command(rig, "relay", "hedra", jid, "--action", "complete", "--job-id", "recovery-job",
                   "--url", "https://result.test/a.mp4")
     assert out["started"] and len(store.load(rig[0], rig[1])["takes"]) == 1
+
+
+def test_quote_without_runner_and_phase_conflict(rig, monkeypatch):
+    pdir, cid, rd = rig
+    (rd / 'config.json').unlink()
+    monkeypatch.setattr(R, '_start_runner', lambda *a: pytest.fail('must not launch a runner'))
+    jid = command(rig, 'relay', 'job', '--kind', 'hedra', '--what', 'quote', '--clip', cid)['job']
+    rc, out = run(pdir, 'relay', 'job', '--kind', 'hedra', '--what', 'generate', '--clip', cid)
+    assert rc != 0 and 'open quote job' in str(out)
+    result = command(rig, 'relay', 'hedra', jid, '--action', 'quote', '--cost', '.5', '--currency', 'USD')
+    assert result['ok'] and result['wake_pending'] and not result['started']
+    assert not R._jobs(rd) and len(R._rows(rd / 'inbox.jsonl')) == 1
+    command(rig, 'clip', 'submit', cid, '--yes', '--hedra-cost', '.5', '--hedra-currency', 'USD')
+    gen = command(rig, 'relay', 'job', '--kind', 'hedra', '--what', 'generate', '--clip', cid)['job']
+    assert gen != jid
+    command(rig, 'relay', 'cancel', gen)
+    assert not R._jobs(rd) and ledger.spent_usd(pdir, 'hedra') == 0
+
+
+def test_missing_runner_does_not_lose_quote(rig, monkeypatch):
+    from slop.config import SlopError
+    def missing(*a):
+        raise SlopError('Claude Code is not installed')
+    monkeypatch.setattr(R, '_start_runner', missing)
+    jid = command(rig, 'relay', 'job', '--kind', 'hedra', '--what', 'quote', '--clip', rig[1])['job']
+    out = command(rig, 'relay', 'hedra', jid, '--action', 'quote', '--cost', '.5', '--currency', 'USD')
+    assert out['ok'] and out['wake_pending'] and not R._jobs(rig[2])
+    assert 'already done' in command(rig, 'relay', 'hedra', jid, '--action', 'quote', '--cost', '.5', '--currency', 'USD')['text']
+
+
+def test_hedra_instructions_are_separate_steps(rig):
+    command(rig, 'relay', 'job', '--kind', 'hedra', '--what', 'quote', '--clip', rig[1])
+    text = command(rig, 'relay', 'read')['grok_next']
+    assert text.startswith('1. ') and '\n2. ' in text
+
+
+def test_full_handoff_without_claude_or_configuration(rig, monkeypatch):
+    pdir, cid, rd = rig
+    (rd / 'config.json').unlink()
+    monkeypatch.setattr(R, '_start_runner', lambda *a: pytest.fail('no runner should start'))
+    jid = generate(rig)
+    command(rig, 'relay', 'hedra', jid, '--action', 'start', '--cost', '.5', '--currency', 'USD')
+    command(rig, 'relay', 'hedra', jid, '--action', 'pending', '--job-id', 'runner-free')
+    monkeypatch.setattr(hedra.higgsfield, 'fetch_result', lambda url, path, **kw: path.write_bytes(b'fake mp4'))
+    monkeypatch.setattr(clips, 'probe_duration', lambda p: 4)
+    out = command(rig, 'relay', 'hedra', jid, '--action', 'complete', '--job-id', 'runner-free',
+                  '--url', 'https://result.test/a.mp4', '--cost', '.4', '--currency', 'USD')
+    assert out['ok'] and out['wake_pending'] and not out['started']
+    assert not R._jobs(rd) and len(R._rows(rd / 'inbox.jsonl')) == 2
+    assert store.load(pdir, cid)['status'] == 'delivered'
+    assert ledger.spent_usd(pdir, 'hedra') == .4
+
+
+def test_cancel_stale_quote_without_setup(rig):
+    jid = command(rig, 'relay', 'job', '--kind', 'hedra', '--what', 'quote', '--clip', rig[1])['job']
+    (rig[2] / 'config.json').unlink()
+    out = command(rig, 'relay', 'cancel', jid, '--reason', 'superseded by direct test')
+    assert out['status'] == 'cancelled' and out['ok']
+    assert not R._jobs(rig[2]) and not ledger.rows(rig[0])

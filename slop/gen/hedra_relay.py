@@ -66,7 +66,7 @@ def instruction(j):
     if state == "started":
         return prefix + ("Generation was attempted but its id is unknown. Recover the existing Hedra job; "
                          f"record it with slop relay hedra {jid} --action pending --job-id ID. Do not generate again.")
-    return prefix + ("Upload references and re-estimate. Before generate_video, claim once with "
+    return prefix + ("Upload references and re-estimate with estimate.input (exclude idempotency_key). Before generate_video, claim once with "
                      f"slop relay hedra {jid} --action start --cost COST --currency UNIT. "
                      "Only a successful start authorizes the saved request; immediately record the returned job id "
                      f"with slop relay hedra {jid} --action pending --job-id ID. Follow poll_after_seconds.")
@@ -98,8 +98,6 @@ def cancel(j):
 def report(a):
     from .. import relay as R
     _, rd = R._dirs()
-    # Check configuration before recording a result that must wake the production.
-    R._cfg(rd)
     finish = None
     with R._lock(rd):
         jobs = R._jobs(rd, open_only=False)
@@ -192,5 +190,5 @@ def report(a):
                 rec.update(status="failed", reason=a.reason, ended=util.iso_now())
                 finish = f"Hedra {j['clip']} failed: {a.reason}. Retain estimated spend unless net cost is confirmed."
         # deliver writes the terminal job state and inbox message atomically, and wakes production.
-    out = R.deliver(f"[grok] {j['job']}: {finish}", "grok", (j["job"], rec))
+    out = R.deliver(f"[grok] {j['job']}: {finish}", "grok", (j["job"], rec), optional_runner=True)
     return {**out, "job": j["job"]}

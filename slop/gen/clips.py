@@ -23,7 +23,7 @@ orv.py / prompts.py flow, made generic and gated for a weaker operator:
     @Image1, moving in time with @Audio1."); --frame first pins the exact composition (no audio conditioning on
     OpenRouter: the take is warned and the prompt says "the music"). On Higgsfield motion clips default to --frame first
     (start_image + audio_references: both count there).
-  * two clips never start from the same frame: a plate already used as a start makes the next clip take the plate's next
+  * starts are unique unless --reuse-start explicitly permits an intentional repeat: a plate already used as a start makes the next clip take the plate's next
     unused candidate (plates/cands/<plate>/*), else it is an error that names `slop clip frame` (a frame of an earlier
     take, by default its last in-sync frame — the production plan's "continue the previous clip").
   * spending requires status "locked" AND --yes (or the project gate prompts_approved), and the budget check passes
@@ -274,8 +274,16 @@ FRAME_HINT = ("continue from a frame of an earlier take: slop clip frame EARLIER
               "in-sync frame), then pass that file with --start")
 
 
-def choose_start(pdir: Path, cid: str, plate: str | None, explicit: str | None) -> tuple[Path, str, str]:
-    """(path, pixel sha1, note): the first candidate no other clip starts from."""
+def choose_start(pdir: Path, cid: str, plate: str | None, explicit: str | None, *, reuse: bool = False) -> tuple[Path, str, str]:
+    """(path, pixel sha1, note): prefer unused starts; reuse must be explicit."""
+    def imported(p):
+        if p.resolve().is_relative_to(pdir.resolve()):
+            return p
+        import shutil
+        dst = store.clip_folder(pdir, cid) / f"start-{store.file_sha1(p)}{p.suffix.lower()}"
+        shutil.copy2(p, dst)
+        return dst
+
     used = store.used_starts(pdir, exclude=cid)
     if explicit:
         p = Path(explicit)
@@ -283,10 +291,10 @@ def choose_start(pdir: Path, cid: str, plate: str | None, explicit: str | None) 
         if not p.is_file():
             raise SlopError(f"start image not found: {explicit}")
         h = store.image_sha1(p)
-        if h in used:
-            raise SlopError(f"{p.name} is already the start of clip {used[h]}: two clips never start from the same frame. "
-                            f"Use another candidate of the plate (plates/cands/<plate>/), or {FRAME_HINT}.")
-        return p, h, "explicit"
+        if h in used and not reuse:
+            raise SlopError(f"{p.name} is already the start of clip {used[h]}: start reuse is off by default. "
+                            f"Use --reuse-start for an intentional repeat, another candidate, or {FRAME_HINT}.")
+        return imported(p), h, "explicit"
     cands = plate_candidates(pdir, plate)
     if not cands:
         if not plate:
@@ -295,10 +303,10 @@ def choose_start(pdir: Path, cid: str, plate: str | None, explicit: str | None) 
                         "ingest/pick it first (slop plates …) or pass --start IMAGE")
     for k, p in enumerate(cands):
         h = store.image_sha1(p)
-        if h not in used:
-            return p, h, ("the pick" if k == 0 else f"candidate {k + 1}: earlier candidates already start other clips")
+        if reuse or h not in used:
+            return imported(p), h, ("the pick" if k == 0 else f"candidate {k + 1}: earlier candidates already start other clips")
     raise SlopError(f"every candidate of plate {plate!r} already starts another clip (two clips never start from the same "
-                    f"frame). Generate/pick another candidate (slop gen image --plate {plate} …), or {FRAME_HINT}.")
+                    f"frame). Use --reuse-start for an intentional repeat. Generate/pick another candidate (slop gen image --plate {plate} …), or {FRAME_HINT}.")
 
 
 WORD_LO = {"clean": CLEAN_LO}                  # a clean window keeps the words starting in [t0 + .05, t1 - .08)
@@ -531,7 +539,7 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
         song_t0: float | None = None, duration: int | None = None, start: str | None = None, frame: str | None = None,
         style: str | None = None, provider: str | None = None, model: str | None = None, resolution: str | None = None,
         force: bool = False, window_mode: str | None = None, words: str | None = None,
-        aspect_ratio: str | None = None) -> dict:
+        aspect_ratio: str | None = None, reuse_start: bool = False) -> dict:
     if kind not in ("sung", "motion"):
         raise SlopError("--kind must be sung or motion")
     style = style or tpl.default_style(kind)                  # sung: the short form (it copies @Audio1); motion: screenplay
@@ -615,7 +623,7 @@ def new(pdir: Path, shot_id: str, kind: str, *, cid: str | None = None, t0: floa
     if kind == "sung" and frame == "first":
         raise SlopError("sung clips use reference mode (the plate as @Image1 reference): with a first frame OpenRouter "
                         "ignores the audio window (verified). Drop --frame first.")
-    sp, sha, note = choose_start(pdir, cid, shot.get("plate"), start)
+    sp, sha, note = choose_start(pdir, cid, shot.get("plate"), start, reuse=reuse_start)
     if note.startswith("candidate"):
         warns.append(f"start image: {note}")
     window, w2 = cut_window(pdir, cid, wt0, dur, kind, window_mode, quoted=words or None,
@@ -714,7 +722,7 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
                model: str | None = None, provider: str | None = None, frame: str | None = None, start: str | None = None,
                refs: list[str] | None = None, clear_refs: bool = False, audio: str | None = None,
                audio_mode: str | None = None, generate_audio: bool | None = None, recut: bool = False,
-               why: str | None = None, needed: list[float] | None = None, aspect_ratio: str | None = None) -> dict:
+               why: str | None = None, needed: list[float] | None = None, aspect_ratio: str | None = None, reuse_start: bool = False) -> dict:
     c = store.load(pdir, cid)
     if c.get("status") == "submitted":
         raise SlopError(inflight_msg(c))
@@ -810,7 +818,7 @@ def set_fields(pdir: Path, cid: str, *, prompt: str | None = None, requote: bool
             raise SlopError("sung clips use reference mode: with a first frame OpenRouter ignores the audio window (verified)")
         c["frame"] = frame; changed.append("frame")
     if start:
-        sp, sha, _ = choose_start(pdir, cid, None, start)
+        sp, sha, _ = choose_start(pdir, cid, None, start, reuse=reuse_start)
         c["start"], c["start_sha1"] = store.rel(pdir, sp), sha
         c.pop("start_frame", None); c.get("hosted", {}).pop("start", None); changed.append("start")
     if clear_refs:

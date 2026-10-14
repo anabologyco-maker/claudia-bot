@@ -6,7 +6,8 @@ there is no direct Hedra API client or API-key setup. Image and song generation 
 
 The production agent writes and locks the prompt. Grok uploads, quotes and generates through its
 connector. The relay carries the requests and results between them, including waking production when
-a result arrives. The owner approves the prompt and cost before generation.
+a result arrives if a production runner is configured. Hedra jobs also work without Claude Code;
+results are saved to the relay inbox for manual continuation. The owner approves the prompt and cost before generation.
 
 ## Install the test branch on your Grok Bot
 
@@ -16,7 +17,6 @@ Pause any running production before changing the install. On the bot's computer:
 git clone --branch feat/hedra-api-mcp --single-branch https://github.com/lostviolinist/claudia-bot.git /workspace/claudia-hedra-test
 cd /workspace/claudia-hedra-test
 bash bin/setup.sh --full
-slop --json relay setup
 slop relay hedra --help
 ```
 
@@ -26,7 +26,6 @@ If that test checkout already exists, fetch and fast-forward it instead of cloni
 git -C /workspace/claudia-hedra-test fetch origin feat/hedra-api-mcp
 git -C /workspace/claudia-hedra-test merge --ff-only origin/feat/hedra-api-mcp
 bash /workspace/claudia-hedra-test/bin/setup.sh --full
-slop --json relay setup
 ```
 
 Keep the existing branch name for testing; it now contains MCP-only code. Setup points the editable
@@ -44,6 +43,19 @@ Connect Hedra after the owner agrees, authenticate in its connection flow, and c
 Keep the same workspace and billing mode throughout. Estimates may be USD or credits; never convert
 between them or assume that a connector quote uses one particular wallet.
 
+For automatic production wake-up only, install/authenticate a supported production runner and run
+`slop --json relay setup`. Without it, report quote/results normally and read `slop relay inbox`;
+`wake_pending: true` means the result was saved but no production turn started. Do not regenerate.
+
+To clear an old, unused quote job such as J-0001:
+
+```bash
+slop --json relay cancel J-0001 --reason 'superseded by the completed direct-path test'
+```
+
+Only cancel it if `relay read` identifies it as a quote job. This neither cancels nor refunds a provider
+generation. Do not attach a direct-path result to an unrelated relay generation.
+
 ## Inputs and public upload links
 
 Sung clips require the **full install** (`bash bin/setup.sh --full`) for song analysis/lyric alignment.
@@ -58,6 +70,11 @@ Changing lead settings does not rewrite an already authored/locked prompt: revie
 New Hedra clips default to `adaptive` aspect ratio rather than inheriting the landscape project default.
 For a vertical output, explicitly pass `--aspect-ratio 9:16` to `clip new` or `clip set`, then re-lock.
 This controls output shape; review the result for framing. Other providers keep their existing defaults.
+
+An intentional second clip from the same plate needs `clip new ... --reuse-start` (use a new `--id`).
+For a replacement image use `clip set CLIP --start IMAGE --reuse-start`. The default still prefers
+different start images. External `--start` files are copied unchanged into the clip folder and stored
+as project-relative paths; to migrate an older absolute start path, set it again before locking.
 
 Hedra upload_file needs a publicly fetchable HTTPS URL. Cloudflare tunnels are one way to provide it;
 some Grok Bot networks block them. The toolkit does not require Cloudflare if valid URLs are already
@@ -78,7 +95,7 @@ A dry run now reports `upload_problems` and `ready_to_upload`. Quote-only and pa
 any public source URL is missing/stale, with no new reservation. URL presence is not proof of external
 reachability: Hedra's upload must still succeed before estimating or starting generation.
 
-## Automatic relay workflow
+## Relay workflow (automatic wake-up is optional)
 
 Replace NAME, SHOT and CLIP with actual project and clip names. Start from a project with its storyboard,
 approved plate and song window. Create a new clip for the smoke test.
@@ -100,17 +117,18 @@ the source hashes, uploads each source_url with Hedra `upload_file`, and replace
 `file.url` in a separate resolved copy; never edit the relay snapshot. Generation inputs must use those Hedra file handles, not raw tunnel URLs. Preserve query
 strings and respect expiry. An unreachable tunnel is a setup failure: report it before generating.
 
-Grok calls `estimate` with `generation_tool: "generate_video"` and `input` equal to the resolved request,
-then reports the amount and currency:
+Grok calls `estimate` with `generation_tool: "generate_video"` and `input` equal to the resolved
+`estimate.input` (exclude `idempotency_key`), then reports the amount and currency:
 
 ```bash
 slop --json relay hedra J-0001 --action quote --cost COST --currency USD
 # Use --currency credits if that is the actual quoted unit.
 ```
 
-This closes the free quote job and wakes production with `clips/CLIP/hedra-quote.json`. Production shows
-the prompt and estimate to the owner. After explicit approval, it sets the matching total project cap,
-reserves the quote and hands off the paid job:
+This closes the free quote job, even without Claude Code or relay setup, and saves
+`clips/CLIP/hedra-quote.json`. A configured runner wakes automatically; otherwise read `slop relay inbox`
+and continue manually. Show the prompt and estimate to the owner. After explicit approval, set the
+matching total project cap, reserve the quote and hand off the paid job:
 
 ```bash
 slop --json -p NAME project set budget.hedra_usd CAP --owner-ok --by owner
@@ -120,7 +138,9 @@ slop --json -p NAME relay job --kind hedra --what generate --clip CLIP
 ```
 
 A generate job must match a completed relay quote and the reserved take. Reposting an open Hedra job
-for that clip reuses it. Grok uploads fresh handles as needed and re-estimates immediately before starting:
+for that clip and phase reuses it. A different phase is refused until the open job is reported or cancelled.
+Grok uploads fresh handles as needed and re-estimates using `estimate.input`, without the generation-only
+`idempotency_key`, immediately before starting:
 
 ```bash
 slop --json relay hedra J-0002 --action start --cost COST --currency USD
@@ -163,6 +183,30 @@ Grok executes the upload/estimate steps. After approval, `clip submit CLIP --hed
 --hedra-currency USD|credits --yes` writes the reserved request. Grok follows its `how_to_run`, records
 its provider id with `clip ingest --pending`, and ingests the completed output with `--url`.
 `clip poll` prints connector recovery/poll instructions; the CLI does not call Hedra itself.
+
+## Sung lines that extend past a shot
+
+The storyboard shot, the needed sung span (`--t0`/`--t1`) and the generation's audio window
+(`--song-t0`/`--duration`) are separate. A longer generation does not extend the storyboard shot.
+Inspect `analysis/words.json` for the last word's end. If the singer should remain visible through that
+word, extend or split the storyboard shot first, avoiding an overlap with the next shot, then set the
+clip's needed span to include the full line. Choose a word gap before the phrase and a 4–8 second
+window with tail room after its final word. For example, a needed phrase at song seconds 10–14.4
+can use `--t0 10 --t1 14.4 --song-t0 9.8 --duration 5`, subject to the actual aligned word gaps.
+Use these flags on `clip new`, or on `clip set CLIP ... --recut`; review/rewrite and re-lock the prompt.
+Re-cutting invalidates the old hosted audio URL: upload the new window, then quote and approve again.
+
+If the intended cut stays before the line ends, cover the remaining words in the following shot or
+with a cutaway; do not stretch the video or silently drop lyrics. A phrase needing more than eight
+seconds requires multiple windows. Run `clip sync CLIP` and `clip coverage CLIP` after delivery;
+only the measured covered spans should be used in the edit. See [lip-sync and covers](61-lipsync.md).
+
+The default short sung prompt explicitly says **no head turns**, and the image is a reference, not
+an exact first frame. Do not promise the plate's exact starting pose or a turn with that prompt.
+An intended turn needs a reviewed screenplay prompt without contradictory constraints, or a separate
+motion shot. Sung first-frame mode is currently unsupported; acting plus singing needs its own test.
+A reported 154 ms lag and 65% sync coverage do not establish an acceptable whole-line performance.
+Measure each take; do not automatically buy another generation to fix quality.
 
 ## Constraints
 

@@ -87,7 +87,9 @@ def dry_run(pdir, c, *, resolution=None, no_audio_ref=False):
     req = build(pdir, c, resolution=resolution, no_audio_ref=no_audio_ref)
     problems = clips.lock_problems(pdir, c)
     if c.get("status") == "submitted":
-        problems.append("a take is already in flight")
+        problems.append("a take is already in flight; resume its saved request/job, do not quote or submit again")
+    elif c.get("status") != "locked":
+        problems.append(f"clip is {c.get('status')}; review and clip lock before quoting")
     missing = [u["key"] for u in req["uploads"] if not u["source_url"]]
     return {"upload_problems": missing, "ready_to_upload": not missing, "dry_run": True, "clip": c["id"], "provider": "hedra", "transport": "mcp",
             "would_send": req["request"], "mcp_request": req["request"], "uploads": req["uploads"],
@@ -96,7 +98,8 @@ def dry_run(pdir, c, *, resolution=None, no_audio_ref=False):
                     "Price comes from Hedra's estimate, in its returned currency. "
                     + ("Missing public upload URLs: " + ", ".join(missing) + ". " if missing else "")
                     + ("Before submit: " + "; ".join(problems) if problems else
-                       "Use --quote-only, upload the files with the connector, "
+                       "Record public URLs with gen host CLIP --role start|audio --url URL before quoting." if missing else
+                       "Run clip submit CLIP --quote-only as a separate command, upload the files with the connector, "
                        "replace placeholders, estimate generation_tool=generate_video, then submit with "
                        "--hedra-cost COST --hedra-currency USD|credits --yes.")}
 
@@ -138,9 +141,10 @@ def submit(pdir, c, *, yes, resolution=None, no_audio_ref=False, cost=None, curr
     store.save(pdir, c)  # durable before the connector is instructed to generate
     ledger.record(pdir, provider="hedra", model=MODEL, kind="video", est_usd=usd, credits=cr,
                   units={"clip": c["id"], "take": tk["n"]}, note=f"Hedra MCP estimate ({currency})")
+    estimate_input = copy.deepcopy(req["request"])
     req["request"]["idempotency_key"] = key
     req.update(provider="hedra", transport="mcp", cost=cost, currency=currency,
-               estimate={"generation_tool": "generate_video", "input": req["request"]})
+               estimate={"generation_tool": "generate_video", "input": estimate_input})
     cid = c["id"]
     req["how_to_run"] = [
         "Use the Hedra connector at https://hedra.com/mcp. get_balance: show both wallets and billing_mode. "
@@ -148,7 +152,7 @@ def submit(pdir, c, *, yes, resolution=None, no_audio_ref=False, cost=None, curr
         "For every upload, call upload_file {url: source_url}; if missing, start the tunnel and host the local "
         "file first. Verify the file sha1. Replace placeholders with the returned file.url in request and estimate. "
         "Reuse the handles from the preflight estimate while unexpired; otherwise upload and estimate again.",
-        f"Call estimate with generation_tool=generate_video and input=request. Require cost={cost:g} and "
+        f"Call estimate with generation_tool=generate_video and input=estimate.input (never include idempotency_key). Require cost={cost:g} and "
         f"currency={currency}; if either changed, do not generate: record --failed 'rejected: quote changed' "
         f"{'--cost-usd' if currency == 'USD' else '--credits'} 0 for this unsubmitted take, "
         "then obtain a new reservation with the new quote.",

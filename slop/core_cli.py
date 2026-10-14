@@ -1716,6 +1716,10 @@ def _repeat_lines(nx: dict) -> list[str]:
             "      then fix the cause (or the input it complains about) before starting it again"]
 
 
+def _cap_text(value, unit):
+    return f"{value:g} {unit}" if value else "no cap (0 = unlimited)"
+
+
 def next_lines(pdir: Path, nx: dict, offer_next: bool = True) -> list[str]:
     """The 'next:' block of `slop status` (and of `slop next` when it stops)."""
     lines = [f"next: {nx['do']}"]
@@ -1760,8 +1764,12 @@ def cmd_status(args) -> dict:
     or_ = sp["by_provider"].get("openrouter", {})
     hf = sp["by_provider"].get("higgsfield", {})
     lines.append(f"spend (ledger estimate): openrouter {util.money(or_.get('est_usd', 0))} of "
-                 f"{util.money(b['openrouter_usd'])} cap | higgsfield {hf.get('credits', 0):g} of "
-                 f"{b['higgsfield_credits']:g} credits" + _requested_note(hf) + f"   (real spend: {_pcmd(pdir, 'spend')})")
+                 f"{_cap_text(b['openrouter_usd'], 'USD')} cap | higgsfield {hf.get('credits', 0):g} of "
+                 f"{_cap_text(b['higgsfield_credits'], 'credits')}" + _requested_note(hf) + f"   (real spend: {_pcmd(pdir, 'spend')})")
+    hd = sp["by_provider"].get("hedra", {})
+    lines.append(f"Hedra: {hd.get('est_usd', 0):g} USD / {hd.get('credits', 0):g} credits; "
+                 f"USD cap: {_cap_text(b['hedra_usd'], 'USD')}; "
+                 f"credit cap: {_cap_text(b['hedra_credits'], 'credits')}")
     if sp["bad_lines"]:
         lines.append(f"WARNING: ledger.jsonl has {sp['bad_lines']} unreadable lines")
     if st["jobs"]:
@@ -2382,7 +2390,7 @@ def cmd_spend(args) -> dict:
                      f" | higgsfield cap {bud['higgsfield_credits']:g} credits (left ~{bud['higgsfield_left']})"
                      f" | confirm over {util.money(bud['confirm_over_usd'])}")
         if "hedra" in led["by_provider"] or bud["hedra_usd"] or bud["hedra_credits"]:
-            lines.append(f"Hedra caps: ${bud['hedra_usd']:g} USD / {bud['hedra_credits']:g} credits (0 = uncapped); "
+            lines.append(f"Hedra caps: {_cap_text(bud['hedra_usd'], 'USD')} / {_cap_text(bud['hedra_credits'], 'credits')}; "
                          "unknown or unconfirmed refunds retain their estimate")
         if led["bad_lines"]:
             lines.append(f"WARNING: ledger.jsonl has {led['bad_lines']} unreadable lines")

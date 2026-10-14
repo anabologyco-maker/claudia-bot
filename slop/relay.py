@@ -601,11 +601,11 @@ def cmd_send(a) -> dict:
     return deliver(_words(a, "send"), a.sender)
 
 
-def deliver(text: str, who: str, job_update: tuple | None = None) -> dict:
+def deliver(text: str, who: str, job_update: tuple | None = None, *, optional_runner: bool = False) -> dict:
     """Append a message to the inbox (director words also to decisions.md, dated) and start a turn when nothing runs.
     job_update = (job id, record): written to jobs.json under the same lock."""
     wd, rd = _dirs()
-    cfg = _cfg(rd)
+    cfg = _cfg(rd, need=not optional_runner)
     claim = None
     with _lock(rd):
         if job_update:
@@ -623,17 +623,21 @@ def deliver(text: str, who: str, job_update: tuple | None = None) -> dict:
             util.append_text(dl, head + f"- {util.stamp()} - [director, relay #{mid}] "
                              + re.sub(r"\s*\n\s*", " / ", text.strip()) + "\n")
         run = _runner(rd)
-        if not run["alive"]:
+        if cfg.get("engine") and not run["alive"]:
             claim = uuid.uuid4().hex[:10]
             _write_json(rd / "runner.json", {"state": "starting", "claim": claim, "since": util.iso_now(),
                                              "since_ts": time.time(), "since_mono": time.monotonic()})
     _log(rd, f"in #{mid} from {who}: {text[:120]}")
-    out = {"ok": True, "id": mid, "from": who, "engine": cfg["engine"], "next": "slop --json relay read --wait 200"}
+    out = {"ok": True, "id": mid, "from": who, "engine": cfg.get("engine"), "next": "slop --json relay read --wait 200"}
+    if not cfg.get("engine"):
+        return {**out, "started": False, "wake_pending": True, "next": "slop --json relay inbox",
+                "text": f"message #{mid} and job result saved. No production runner configured; "
+                        "read relay inbox and continue manually. Automatic wake-up needs relay setup."}
     if claim:
         try:
             s = _start_runner(wd, rd, claim)
         except SlopError as e:
-            return {**out, "ok": False, "error": str(e),
+            return {**out, "ok": optional_runner, "started": False, "wake_pending": True, "error": str(e),
                     "text": f"message #{mid} saved, but the production did not start: {e}"}
         out.update(started=True, job=s["id"], text=f"message #{mid} passed on; the production started a turn "
                    f"(job {s['id']}). Next: slop --json relay read --wait 200")
@@ -791,6 +795,9 @@ def cmd_job(a) -> dict:
             prior = next((j for j in _jobs(rd) if j.get("job_kind") == "hedra"
                           and j.get("project_dir") == str(base.resolve()) and j.get("clip") == a.clip), None)
             if prior:
+                if prior["what"] != a.what:
+                    raise SlopError(f"{prior['job']} is an open {prior['what']} job for this clip; "
+                                    "report or cancel it before posting a different phase")
                 return {"job": prior["job"], "text": hedra_relay.instruction(prior)}
         rec.update(hedra_relay.prepare(base, a.clip, a.what))
     elif a.kind == "midjourney":
@@ -867,6 +874,9 @@ def cmd_job(a) -> dict:
             prior = next((j for j in _jobs(rd) if j.get("job_kind") == "hedra"
                           and j.get("project_dir") == rec["project_dir"] and j.get("clip") == a.clip), None)
             if prior:
+                if prior["what"] != a.what:
+                    raise SlopError(f"{prior['job']} is an open {prior['what']} job for this clip; "
+                                    "report or cancel it before posting a different phase")
                 return {"job": prior["job"], "text": hedra_relay.instruction(prior)}
         oid = _next_id(rd / "outbox.jsonl")
         jid = job_id(oid)
@@ -1014,7 +1024,8 @@ def cmd_cancel(a) -> dict:
             _write_json(rd / "jobs.json", jobs)
         _log(rd, f"job {j['job']} cancelled by the production" + (f": {reason}" if reason else ""))
         return {"job": j["job"], "status": "cancelled", "text": f"job {j['job']} cancelled: Grok will not run it"}
-    out = deliver(f"[grok] {j['job']} cancelled" + (f": {reason}" if reason else ""), "grok", (j["job"], rec))
+    out = deliver(f"[grok] {j['job']} cancelled" + (f": {reason}" if reason else ""), "grok", (j["job"], rec),
+                  optional_runner=j.get("job_kind") == "hedra")
     out.update(job=j["job"], status="cancelled", text=f"job {j['job']} cancelled; " + out["text"])
     return out
 
@@ -1134,9 +1145,15 @@ def _grok_next(items: list, prod: dict, jobs: list) -> str:
     elif s == "queued":
         steps.append("run `slop --json relay send 'continue' --from grok` (messages wait, but no turn runs)")
     elif s == "not set up":
-        steps.append("run `slop --json relay setup` first")
+        if any(j.get("job_kind") == "hedra" for j in jobs):
+            steps.append("Hedra jobs can finish without a production runner. Read `slop relay inbox` afterward; "
+                         "`slop relay setup` is only needed for automatic production wake-up")
+        else:
+            steps.append("run `slop --json relay setup` first")
     else:
         steps.append(f"wait for the person's next words and pass them verbatim with {send}")
+    if any(j.get("job_kind") == "hedra" for j in jobs):
+        return "\n".join(f"{i}. {step[0].upper() + step[1:]}" for i, step in enumerate(steps, 1))
     out = steps[0][0].upper() + steps[0][1:]
     for st in steps[1:]:
         out += ", then " + st
