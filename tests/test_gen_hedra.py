@@ -166,7 +166,10 @@ def test_missing_public_urls_fail_without_reservation_or_false_quote(env, tmp_pa
 
 def test_vertical_output_and_connector_next_step(env, tmp_path):
     cid = ready(env, tmp_path)
-    assert store.load(env, cid)["body"]["aspect_ratio"] == "adaptive"
+    c = store.load(env, cid)
+    assert c["body"]["aspect_ratio"] == "adaptive"
+    c["body"].pop("aspect_ratio")
+    assert hedra.build(env, c)["request"]["aspect_ratio"] == "adaptive"
     assert run(env, "clip", "set", cid, "--aspect-ratio", "9:16")[0] == 0
     rc, out = run(env, "clip", "lock", cid)
     assert rc == 0 and "--kind hedra --what quote" in out["text"] and "--yes" not in out["text"]
@@ -176,7 +179,7 @@ def test_vertical_output_and_connector_next_step(env, tmp_path):
 
 def test_male_lead_prompt_uses_configured_pronoun():
     lead = tpl.lead_words({"lead": {"pronoun": "he"}})
-    prompt = tpl.sung_prompt(words="city lights", phrases=[], t0=0, duration=4,
+    prompt = tpl.sung_prompt(words="a new day", phrases=[], t0=0, duration=4,
                              shot={}, lead=lead, kicks=[], downbeats=[])
     assert "He lip-syncs" in prompt and "the man" in prompt.lower() and "she" not in prompt.lower()
 

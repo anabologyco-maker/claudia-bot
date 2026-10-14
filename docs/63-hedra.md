@@ -9,34 +9,17 @@ connector. The relay carries the requests and results between them, including wa
 a result arrives if a production runner is configured. Hedra jobs also work without Claude Code;
 results are saved to the relay inbox for manual continuation. The owner approves the prompt and cost before generation.
 
-## Install the test branch on your Grok Bot
+## Setup
 
-Pause any running production before changing the install. On the bot's computer:
-
-```bash
-git clone --branch feat/hedra-api-mcp --single-branch https://github.com/lostviolinist/claudia-bot.git /workspace/claudia-hedra-test
-cd /workspace/claudia-hedra-test
-bash bin/setup.sh --full
-slop relay hedra --help
-```
-
-If that test checkout already exists, fetch and fast-forward it instead of cloning again:
-
-```bash
-git -C /workspace/claudia-hedra-test fetch origin feat/hedra-api-mcp
-git -C /workspace/claudia-hedra-test merge --ff-only origin/feat/hedra-api-mcp
-bash /workspace/claudia-hedra-test/bin/setup.sh --full
-```
-
-Keep the existing branch name for testing; it now contains MCP-only code. Setup points the editable
-install at this checkout and preserves the installed profile and projects. To return to the old version,
-run setup from the original checkout. Do not run `slop update apply` during this test.
+From a checkout containing Hedra support, run `bash bin/setup.sh --full` and check
+`slop relay hedra --help`. Pause any running production before changing the install.
+The full install includes the song analysis and lyric alignment needed for sung clips.
 
 **Update Grok's instructions too:** install the `hedra` skill from `skills/hedra/SKILL.md`, replace
 `claudia-relay` with `skills/claudia-relay/SKILL.md`, and update the bot profile from `skills/profile.md`.
 The rebuilt `skills/dist/recipe.json` includes these for new imports. A Git pull only updates the toolkit;
 it does not update skills already stored in a Grok Bot. The older profile forbids Grok from executing paid
-calls, so updating it matters. Ask the bot to read the new skills from the checkout for the smoke test.
+calls, so updating it matters. Ask the bot to read the updated skills from the checkout before using Hedra.
 
 Connect Hedra after the owner agrees, authenticate in its connection flow, and call `get_model` for
 `seedance-25` and `get_balance`. Record success with `slop onboard mark hedra --connected`.
@@ -47,14 +30,9 @@ For automatic production wake-up only, install/authenticate a supported producti
 `slop --json relay setup`. Without it, report quote/results normally and read `slop relay inbox`;
 `wake_pending: true` means the result was saved but no production turn started. Do not regenerate.
 
-To clear an old, unused quote job such as J-0001:
-
-```bash
-slop --json relay cancel J-0001 --reason 'superseded by the completed direct-path test'
-```
-
-Only cancel it if `relay read` identifies it as a quote job. This neither cancels nor refunds a provider
-generation. Do not attach a direct-path result to an unrelated relay generation.
+To cancel an unused quote, find its id with `slop relay read --all`, then run
+`slop --json relay cancel JOB --reason 'quote no longer needed'`. This neither cancels nor refunds
+a provider generation. Do not attach a direct-path result to an unrelated relay generation.
 
 ## Inputs and public upload links
 
@@ -74,9 +52,9 @@ Sung clips require the **full install** (`bash bin/setup.sh --full`) for song an
 Run `slop -p NAME analyze` before creating a sung clip if analysis/words.json is not present. Minimal
 installation alone is insufficient for the complete sung workflow.
 
-The project defaults to Claudia. For a different lead, set their words explicitly before drafting:
-`slop --json -p NAME lead --pronoun he --noun 'the man'` (use the actual lead's pronouns/noun).
-The prompt template follows these settings; setting only `he` now also defaults the noun to "the man".
+The project defaults to Claudia. For a different singing lead, configure their actual pronoun and
+noun with `slop -p NAME lead --pronoun PRONOUN --noun 'SUBJECT DESCRIPTION'` before drafting.
+The prompt template follows these settings.
 Changing lead settings does not rewrite an already authored/locked prompt: review and update that prompt.
 
 New Hedra clips default to `adaptive` aspect ratio rather than inheriting the landscape project default.
@@ -98,7 +76,7 @@ slop --json -p NAME gen host CLIP --role start --url 'PUBLIC_IMAGE_URL'
 slop --json -p NAME gen host CLIP --role audio --url 'PUBLIC_WINDOW_URL'
 ```
 
-The audio must be the actual 4-second window file, not the full song or a re-encoded variant. Public
+The audio must be the actual clip's audio window file, not the full song or a re-encoded variant. Public
 hosting exposes these files to anyone with the links until removal/expiry; get approval for the host and
 files. No third-party host is chosen or uploaded to automatically. Expiring links must remain live until
 Hedra imports them; refresh expired URLs and request a fresh quote. Never use a private browser-only URL.
@@ -109,19 +87,21 @@ reachability: Hedra's upload must still succeed before estimating or starting ge
 
 ## Relay workflow (automatic wake-up is optional)
 
-Replace NAME, SHOT and CLIP with actual project and clip names. Start from a project with its storyboard,
-approved plate and song window. Create a new clip for the smoke test.
+Replace NAME, SHOT and CLIP with actual project, shot and clip names. Start from a project with its
+storyboard and approved image. Choose `motion` for image animation, or `sung` for requested singing
+with an aligned song window. Choose duration, resolution and aspect ratio for the intended output;
+the example below uses the default settings for motion.
 
 ```bash
-slop --json -p NAME clip new SHOT --id hedra-smoke --kind sung --provider hedra --res 480p --aspect-ratio 9:16
-# Production writes a prompt with every [[slot]] filled and the exact quoted words.
-slop --json -p NAME clip set hedra-smoke --prompt-file /absolute/path/to/prompt.txt
-slop --json -p NAME clip lock hedra-smoke
-slop --json -p NAME clip submit hedra-smoke --dry-run
+slop --json -p NAME clip new SHOT --id CLIP --kind motion --provider hedra
+# Production writes the requested action with every [[slot]] filled; sung prompts also quote the lyrics.
+slop --json -p NAME clip set CLIP --prompt-file /absolute/path/to/prompt.txt
+slop --json -p NAME clip lock CLIP
+slop --json -p NAME clip submit CLIP --dry-run
 # If public URLs are not already recorded and the network permits tunnels:
 slop --json -p NAME gen tunnel start
 slop --json -p NAME gen tunnel status --verify
-slop --json -p NAME relay job --kind hedra --what quote --clip hedra-smoke
+slop --json -p NAME relay job --kind hedra --what quote --clip CLIP
 ```
 
 `relay read` routes the quote job to Grok's Hedra skill with an immutable request snapshot. Grok verifies
@@ -130,10 +110,10 @@ the source hashes, uploads each source_url with Hedra `upload_file`, and replace
 strings and respect expiry. An unreachable tunnel is a setup failure: report it before generating.
 
 Grok calls `estimate` with `generation_tool: "generate_video"` and `input` equal to the resolved
-`estimate.input` (exclude `idempotency_key`), then reports the amount and currency:
+`estimate.input` (exclude `idempotency_key`), then reports the amount and currency (replace QUOTE_JOB with the returned job id):
 
 ```bash
-slop --json relay hedra J-0001 --action quote --cost COST --currency USD
+slop --json relay hedra QUOTE_JOB --action quote --cost COST --currency USD
 # Use --currency credits if that is the actual quoted unit.
 ```
 
@@ -152,12 +132,12 @@ slop --json -p NAME relay job --kind hedra --what generate --clip CLIP
 A generate job must match a completed relay quote and the reserved take. Reposting an open Hedra job
 for that clip and phase reuses it. A different phase is refused until the open job is reported or cancelled.
 Grok uploads fresh handles as needed and re-estimates using `estimate.input`, without the generation-only
-`idempotency_key`, immediately before starting:
+`idempotency_key`, immediately before starting (replace GENERATE_JOB with the returned job id):
 
 ```bash
-slop --json relay hedra J-0002 --action start --cost COST --currency USD
+slop --json relay hedra GENERATE_JOB --action start --cost COST --currency USD
 # Only after ok: call generate_video with the resolved request and its saved idempotency_key.
-slop --json relay hedra J-0002 --action pending --job-id HEDRA_JOB_ID
+slop --json relay hedra GENERATE_JOB --action pending --job-id HEDRA_JOB_ID
 ```
 
 The start claim rechecks the quote, input hashes, spend freeze and caps, then durably marks the take as
@@ -168,12 +148,12 @@ Grok calls `get_generations` with `job_ids: [HEDRA_JOB_ID]`, `wait_seconds: 20`,
 `poll_after_seconds`. After completion:
 
 ```bash
-slop --json relay hedra J-0002 --action complete --job-id HEDRA_JOB_ID --url 'OUTPUT_URL'
+slop --json relay hedra GENERATE_JOB --action complete --job-id HEDRA_JOB_ID --url 'OUTPUT_URL'
 # Include --cost COST --currency UNIT when the provider confirms net cost.
 ```
 
-Completion downloads/ingests the take and wakes production to run `clip sync CLIP`, inspect the video,
-and continue the edit. Duplicate completion does not create another take or production notification.
+Completion downloads/ingests the take and wakes configured production to inspect the video and
+continue the edit. Run `clip sync CLIP` for sung clips. Duplicate completion does not create another take or production notification.
 For a confirmed failed generation use `--action failed --job-id ID --reason 'provider reason'`, adding
 confirmed net cost if available. Missing cost does not imply a refund. Never alter refused inputs to
 bypass a service restriction.
@@ -213,13 +193,10 @@ with a cutaway; do not stretch the video or silently drop lyrics. A phrase needi
 seconds requires multiple windows. Run `clip sync CLIP` and `clip coverage CLIP` after delivery;
 only the measured covered spans should be used in the edit. See [lip-sync and covers](61-lipsync.md).
 
-The default short sung prompt explicitly says **no head turns**, and the image is a reference, not
-an exact first frame. Do not promise the plate's exact starting pose or a turn with that prompt.
-An intended turn can use `clip new ... --allow-turn` or `clip set CLIP --allow-turn`. This replaces
-the default closer with "One continuous shot, no cuts."; it does not invent turn timing or guarantee
-the starting pose. Review the actual action and re-lock/requote the changed prompt. Lock warns when a
-prompt contains both "no head turns" and a turn. A moving or hidden mouth may reduce sync; measure it.
-For complex acting, use a reviewed screenplay prompt or a separate motion shot. Sung first-frame mode is currently unsupported; acting plus singing needs its own test.
+For requested sung movement, review the default prompt constraints and use the optional action
+controls described in [lead wording and optional turns](60-clips.md#lead-wording-and-optional-turns).
+Write the action from the owner's request; no starting pose or movement is assumed. Sung first-frame
+mode is currently unsupported.
 Review each result against the requested subject, composition and action; measure lip sync only for
 sung clips. Do not automatically buy another generation to fix quality.
 
@@ -234,19 +211,20 @@ are outside this integration. Hedra lip-sync quality needs to be measured on the
 
 ## Grok Bot smoke-test prompt
 
-After loading the branch and updating the bot instructions, paste:
+After installing the toolkit and updating the bot instructions, paste:
 
-> Read the updated claudia-relay and hedra skills from /workspace/claudia-hedra-test/skills and
-> docs/63-hedra.md. Use the relay to test one new 4-second, 480p sung clip in my existing project with
-> my approved image and exact clean song-audio window. Production should choose provider hedra,
-> prepare and lock the prompt, then hand you a quote job. Show me the prompt, input roles, cost and
+> Read the claudia-relay and hedra skills and docs/63-hedra.md from the installed checkout.
+> Prepare a new Hedra clip in my project using my selected image, requested action and output settings.
+> Use motion unless I request singing; for singing, use the selected performer's aligned audio window.
+> Lock the reviewed prompt and hand off a free quote job. Show me the prompt, input roles, cost and
 > currency before spending. After I approve, reserve that quote and use the generate handoff.
-> Record the provider job id immediately, poll it without regenerating, return the completed video
-> to production, run clip sync, and show me the video, measured sync and ledger cost.
+> Record the provider job id immediately, poll it without regenerating, and return the completed video.
+> Show me the video and ledger cost; measure sync and coverage if this is a sung clip.
 
 Success evidence: the quote relay job completes, approval precedes the paid start, one provider generation
-serves the take, the MP4 plays, the audio reference matches, sync is measured, the correct wallet is charged,
-and production resumes. A completed job alone does not establish acceptable lip sync.
+serves the take, the video plays, inputs and output match the request, the correct wallet is charged,
+and the result reaches production or the manual inbox. For sung clips, check the audio reference and
+measure sync; a completed job alone does not establish acceptable lip sync.
 
 Automated tests use synthetic media and mocked responses; they do not spend money or prove a live Hedra
 render succeeds. Run `python -m pytest -q tests/test_gen_hedra.py tests/test_hedra_relay.py` with normal
@@ -274,5 +252,5 @@ confirmed refunds reduce the total. Unconfirmed prices stay estimates, and credi
 to USD. This is recorded project spend, not a fresh check of the provider's whole wallet.
 
 Multiple clips may have saved free quotes. A completed quote job is closed, and its saved quote is
-neither an open generation nor a reservation. Before paying, select exactly one clip and approve that
-clip's prompt and price. Leave the other test clips unsubmitted; do not batch-generate identical quotes.
+neither an open generation nor a reservation. Each paid take needs approval covering its clip, prompt,
+price and currency. Having a saved quote does not authorize generation.

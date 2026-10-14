@@ -42,7 +42,7 @@ def build(pdir, c, *, resolution=None, no_audio_ref=False):
     res = resolution or b.get("resolution") or "720p"
     if not dur.is_integer() or not 4 <= dur <= 30 or res not in ("480p", "720p", "1080p"):
         raise SlopError("Hedra Seedance 2.5 needs integer 4–30 s and 480p, 720p or 1080p")
-    aspect = b.get("aspect_ratio") or "16:9"
+    aspect = b.get("aspect_ratio") or "adaptive"
     if aspect not in ASPECTS:
         raise SlopError("unsupported Hedra aspect ratio")
     first = c.get("frame") == "first"

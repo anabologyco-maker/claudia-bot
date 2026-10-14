@@ -872,8 +872,7 @@ Note that a take of this window from that round held 99 % of its sung seconds in
 
 ### Intentional start-image reuse
 
-Use `clip new ... --reuse-start` with a new clip id to intentionally reuse a plate for another clip or a
-smoke-test repeat. `clip set CLIP --start IMAGE --reuse-start` permits the same explicit override.
+Use `clip new ... --reuse-start` with a new clip id to intentionally reuse a plate for another clip. `clip set CLIP --start IMAGE --reuse-start` permits the same explicit override.
 Without it, the unused-start selection rule still applies. External start images are copied unchanged
 into the clip folder and saved with project-relative paths.
 
