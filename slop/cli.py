@@ -31,6 +31,25 @@ MODULES.append("slop.relay")  # Grok passes words, the production (Claude Code /
 MODULES.append("slop.update")  # a newer release? one quiet reminder per release; slop update apply installs it
 
 
+FULL_ONLY = {"torch", "torchaudio", "torchvision", "demucs", "transformers", "librosa", "cv2", "safetensors",
+             "accelerate", "wordfreq"}   # = FULL_MODS in bin/setup.sh
+
+
+def _missing_package(e: ModuleNotFoundError) -> str | None:
+    """A package the toolkit needs is not installed (a computer update or reset removes them; some come only with
+    the full install): what to run, instead of a traceback. None: not a missing package (a slop module itself)."""
+    name = (e.name or "").split(".")[0]
+    if not name or name == "slop":
+        return None
+    from .config import slop_home, toolkit_root
+    setup, full = toolkit_root() / "bin" / "setup.sh", name in FULL_ONLY
+    log = slop_home().parent / "claudia-install.log"
+    return (f"the Python package {name!r} is not installed" + (" (it comes with the full install)" if full else
+            " (a computer update or reset removes the toolkit's packages)") + ": reinstall in the background "
+            f"(minutes): nohup setsid bash {setup}{' --full' if full else ''} > {log} 2>&1 < /dev/null &   then "
+            f"check: bash {setup} --check --json")
+
+
 def _render_human(out: dict) -> str:
     if "text" in out and isinstance(out["text"], str):
         return out["text"]
@@ -63,7 +82,15 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     from .util import hoist_global_flags, json_usage_errors
     words = hoist_global_flags(sys.argv[1:] if argv is None else list(argv))
-    ap = build_parser()
+    try:
+        ap = build_parser()
+    except ModuleNotFoundError as e:
+        msg = _missing_package(e)
+        if msg is None:
+            raise
+        print(json.dumps({"ok": False, "error": msg}) if "--json" in words else f"error: {msg}",
+              file=sys.stdout if "--json" in words else sys.stderr)
+        return 1
     json_usage_errors(ap, words)
     args = ap.parse_args(words)
     if not getattr(args, "func", None):
@@ -80,6 +107,11 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 130
     except Exception as e:  # unexpected: keep the traceback for the bot to read
+        msg = _missing_package(e) if isinstance(e, ModuleNotFoundError) else None
+        if msg:
+            print(json.dumps({"ok": False, "error": msg}) if args.json else f"error: {msg}",
+                  file=sys.stdout if args.json else sys.stderr)
+            return 1
         tb = traceback.format_exc(limit=6)
         print(json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}", "traceback": tb}) if args.json else tb,
               file=sys.stdout if args.json else sys.stderr)

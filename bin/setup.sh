@@ -6,6 +6,7 @@
 #   bash bin/setup.sh --full          minimal + CPU torch/torchaudio/torchvision 2.11, demucs 4.1.0,
 #                                     transformers 5.17.*, librosa 1.0.0, opencv-python-headless, safetensors,
 #                                     accelerate, wordfreq + the raw CMU Pronouncing Dictionary (lyric lint)
+#                                     + earshot (the production's ears: its newest commit and its two models)
 #   bash bin/setup.sh --check [--json]   report what is missing; installs nothing, writes nothing
 #   bash bin/setup.sh --cloudflared      only (re)install cloudflared into $SLOP_HOME/bin (REQUIRED for OpenRouter sung
 #                                     clips, Higgsfield media_import_url and the tap app; no venv needed)
@@ -13,7 +14,8 @@
 #
 # $SLOP_HOME defaults to /workspace/.claudia on the Grok Bot computer (where /workspace survives computer updates,
 # which remove installed apps and packages) and to ~/.claudia elsewhere. Re-run this script after any computer
-# update: it re-checks every piece and only downloads what is missing.
+# update or reset: it re-checks every piece and only downloads what is missing. On the Grok Bot computer it also puts
+# back the one line in ~/.bashrc and ~/.profile that loads env.sh (a reset clears the home folder).
 #
 # What it installs (all under $SLOP_HOME):
 #   bin/uv            uv package manager (GitHub release, SHA-256 checked against its published .sha256; fallback:
@@ -27,6 +29,9 @@
 #   cache/{hf,torch,uv}   model weights (HF_HOME) and download caches
 #   cache/cmudict/cmudict.dict   (--full) CMU Pronouncing Dictionary, raw data, BSD-2-Clause (the GPL `cmudict` PyPI
 #                     wrapper is not used); wordfreq: code Apache-2.0, data CC-BY-SA 4.0 (used locally only)
+#   vendor/earshot    (--full) earshot (MIT, github.com/Leonxlnx/earshot; the PyPI name is another project), installed
+#                     into the venv; its models (CLAP Apache-2.0, AST BSD-3, ~1.4 GB) in cache/earshot. Optional: a
+#                     failed fetch only warns
 #   env.sh            PATH, HF_HOME, SLOP_* (NO secrets) - `. $SLOP_HOME/env.sh` in a shell, or call $SLOP_HOME/bin/slop
 #   bin/slop          the CLI shim
 #
@@ -89,6 +94,8 @@ FULL_PKGS=("demucs==4.1.0" "transformers==5.17.*" "librosa==1.0.0" opencv-python
 MINIMAL_MODS=(numpy PIL requests soundfile scipy cmudict playwright)
 FULL_MODS=(torch torchaudio torchvision demucs transformers librosa cv2 safetensors accelerate wordfreq)
 CMU_URL="https://raw.githubusercontent.com/cmusphinx/cmudict/master/cmudict.dict"   # BSD-2-Clause data
+EARSHOT_URL="https://github.com/Leonxlnx/earshot"
+EARSHOT_DIR="$SLOP_HOME/vendor/earshot"; EARSHOT_HOME="$SLOP_HOME/cache/earshot"
 CMU_FILE="$SLOP_HOME/cache/cmudict/cmudict.dict"; CMU_MIN_BYTES=1000000
 
 export UV_PYTHON_INSTALL_DIR="$SLOP_HOME/python" UV_PYTHON_BIN_DIR="$SLOP_HOME/python/bin"
@@ -149,6 +156,19 @@ checksum_state() {  # checksum_state FILE "TEXT WITH THE EXPECTED HEX" -> prints
 
 cmu_ok() { [ -f "$CMU_FILE" ] && [ "$(wc -c <"$CMU_FILE" 2>/dev/null || echo 0)" -ge "$CMU_MIN_BYTES" ]; }
 
+earshot_fetch() {  # the newest earshot into $EARSHOT_DIR (a clone, then fast-forwards); 1 if there is none to install
+  have git || { warn "earshot needs git"; [ -f "$EARSHOT_DIR/pyproject.toml" ]; return; }
+  if [ -d "$EARSHOT_DIR/.git" ]; then
+    GIT_TERMINAL_PROMPT=0 with_timeout 300 git -C "$EARSHOT_DIR" pull -q --ff-only ||
+      warn "could not update earshot ($EARSHOT_URL): keeping the copy installed before"
+  else
+    rm -rf "$EARSHOT_DIR"; mkdir -p "$(dirname "$EARSHOT_DIR")"
+    GIT_TERMINAL_PROMPT=0 with_timeout 300 git clone -q --depth 1 "$EARSHOT_URL" "$EARSHOT_DIR" ||
+      { warn "could not fetch earshot ($EARSHOT_URL: github.com blocked?)"; rm -rf "$EARSHOT_DIR"; return 1; }
+  fi
+  [ -f "$EARSHOT_DIR/pyproject.toml" ]
+}
+
 reachable() {  # reachable URL -> 0 if any HTTP answer within 10 s
   local url="$1"
   if have curl; then
@@ -164,7 +184,7 @@ except urllib.error.HTTPError: pass
 
 py_mods_missing() {  # py_mods_missing MOD... -> prints the ones that do not import with $PY
   [ -x "$PY" ] || { printf '%s\n' "$@"; return 0; }
-  "$PY" - "$@" <<'EOF' 2>/dev/null || printf '%s\n' "$@"
+  "$PY" -I - "$@" <<'EOF' 2>/dev/null || printf '%s\n' "$@"
 import importlib, sys
 for m in sys.argv[1:]:
     try:
@@ -184,10 +204,28 @@ sys.exit(0 if ok else 1)
 EOF
 }
 
+# -I: a slop/ folder where this runs (the projects folder /workspace/slop on the box) must not stand in for the package
 editable_ok() {
   [ -x "$PY" ] || return 1
-  local f; f="$("$PY" -c 'import slop, os; print(os.path.realpath(slop.__file__))' 2>/dev/null)" || return 1
+  local f; f="$("$PY" -I -c 'import slop, os; print(os.path.realpath(slop.__file__))' 2>/dev/null)" || return 1
   case "$f" in "$(cd "$REPO" && pwd -P)"/*) return 0 ;; *) return 1 ;; esac
+}
+
+installed_from() {  # the checkout the venv's slop package runs from (nothing: not installed)
+  [ -x "$PY" ] || return 0
+  "$PY" -I -c 'import slop, os; print(os.path.dirname(os.path.dirname(os.path.realpath(slop.__file__))))' \
+    2>/dev/null || true
+}
+
+shell_rc_ok() {  # new shells load env.sh (on the box a computer reset clears the home folder, and with it this line)
+  grep -qsF "$SLOP_HOME/env.sh" "$HOME/.bashrc" && grep -qsF "$SLOP_HOME/env.sh" "$HOME/.profile"
+}
+
+shell_rc_fix() {  # puts the line back where it is missing (the box: every setup run, so after every reset)
+  local rc
+  for rc in "$HOME/.bashrc" "$HOME/.profile"; do
+    grep -qsF "$SLOP_HOME/env.sh" "$rc" || { printf '. "%s/env.sh"\n' "$SLOP_HOME" >>"$rc" && log "PATH: $rc loads env.sh again"; }
+  done
 }
 
 torch_installed_version() {
@@ -305,7 +343,7 @@ fi
 # =========================================================================== --check
 if [ "$CHECK" = 1 ]; then
   ITEMS=(); MISSING=()
-  item() { ITEMS+=("$1|$2|$3"); [ "$2" = ok ] || MISSING+=("$1"); }
+  item() { ITEMS+=("$1|$2|$3"); [ "$2" = ok ] || [ "$2" = optional ] || MISSING+=("$1"); }
   crlf="$(crlf_files | tr '\n' ' ')"
   if [ -z "${crlf// /}" ]; then item line-endings ok "LF in the bin/ and runner/ scripts"
   else item line-endings missing "Windows (CRLF) line endings in: ${crlf% } - fix: cd $REPO && sed -i 's/\r\$//' ${crlf% }"; fi
@@ -319,8 +357,12 @@ if [ "$CHECK" = 1 ]; then
     m="$(py_mods_missing "${FULL_MODS[@]}" | tr '\n' ' ')"
     if [ -z "${m// /}" ]; then item deps:full ok "${FULL_MODS[*]}"; else item deps:full missing "$m"; fi
     if cmu_ok; then item cmudict ok "$CMU_FILE"; else item cmudict missing "no CMU dictionary at $CMU_FILE (lyric lint)"; fi
+    if [ -z "$(py_mods_missing earshot)" ]; then item earshot ok "the production's ears ($EARSHOT_DIR)"
+    else item earshot optional "earshot not installed (the production's ears; setup.sh --full fetches it from $EARSHOT_URL)"; fi
   fi
-  if editable_ok; then item claudia ok "editable install of $REPO"; else item claudia missing "repo not installed in the venv"; fi
+  if editable_ok; then item claudia ok "editable install of $REPO"
+  elif [ -n "$(installed_from)" ]; then item claudia missing "the venv runs claudia from $(installed_from), not $REPO (setup.sh from this folder switches it)"
+  else item claudia missing "repo not installed in the venv"; fi
   if [ "$NO_BROWSER" = 0 ]; then
     bstate="$(sed -n 's/^export SLOP_BROWSER="\([a-z]*\)"$/\1/p' "$SLOP_HOME/env.sh" 2>/dev/null || true)"
     if [ "$bstate" = none ]; then item browser missing "no browser launched at the last setup (SLOP_BROWSER=none; slop doctor shows why)"
@@ -334,6 +376,10 @@ if [ "$CHECK" = 1 ]; then
   fi
   if [ -f "$SLOP_HOME/env.sh" ] && [ -x "$BIN/slop" ]; then item env ok "$SLOP_HOME/env.sh + $BIN/slop"
   else item env missing "env.sh or the slop shim not written"; fi
+  if on_box; then
+    if shell_rc_ok; then item shell ok "~/.bashrc and ~/.profile load $SLOP_HOME/env.sh"
+    else item shell missing "~/.bashrc or ~/.profile no longer loads $SLOP_HOME/env.sh (a computer reset clears the home folder; setup.sh puts the line back)"; fi
+  fi
   if have ffmpeg; then item ffmpeg ok "$(ffmpeg -hide_banner -version 2>/dev/null | head -n1) (system; setup does not install it)"
   else item ffmpeg missing "ffmpeg not on PATH (the Grok Bot computer ships it; elsewhere install ffmpeg with libx264)"; fi
 
@@ -343,14 +389,18 @@ if [ "$CHECK" = 1 ]; then
 import json, sys
 home, prof, items = sys.argv[1], sys.argv[2], sys.argv[3:]
 rows = [dict(zip(("name", "status", "detail"), it.split("|", 2))) for it in items]
-miss = [r["name"] for r in rows if r["status"] != "ok"]
-print(json.dumps({"ok": not miss, "slop_home": home, "profile": prof, "missing": miss, "items": rows}))
+miss = [r["name"] for r in rows if r["status"] not in ("ok", "optional")]
+opt = [r["name"] for r in rows if r["status"] == "optional"]
+print(json.dumps({"ok": not miss, "slop_home": home, "profile": prof, "missing": miss, "optional": opt,
+                  "items": rows}))
 EOF
   else
     echo "claudia setup check - SLOP_HOME=$SLOP_HOME profile=$PROFILE"
     for it in "${ITEMS[@]}"; do
       IFS='|' read -r n s d <<<"$it"
-      if [ "$s" = ok ]; then printf '  ok       %-13s %s\n' "$n" "$d"; else printf '  MISSING  %-13s %s\n' "$n" "$d"; fi
+      if [ "$s" = ok ]; then printf '  ok       %-13s %s\n' "$n" "$d"
+      elif [ "$s" = optional ]; then printf '  optional %-13s %s\n' "$n" "$d"
+      else printf '  MISSING  %-13s %s\n' "$n" "$d"; fi
     done
     if [ "${#MISSING[@]}" -eq 0 ]; then echo "nothing missing"; else echo "missing: ${MISSING[*]}  ->  run: bash $REPO/bin/setup.sh --$PROFILE"; fi
   fi
@@ -477,6 +527,17 @@ if [ "$PROFILE" = full ]; then
   log "installing full packages: ${FULL_PKGS[*]} ${TORCH_PINS[*]}"
   uvpip "${FULL_PKGS[@]}"
 fi
+if [ "$PROFILE" = full ]; then  # the production's ears; optional, so a failure only warns
+  log "installing earshot, the newest from $EARSHOT_URL (describe, critique, timeline for the production)"
+  if earshot_fetch && uvpip --reinstall-package earshot "$EARSHOT_DIR[mcp]"; then
+    if [ -n "$(ls -A "$EARSHOT_HOME/hf" 2>/dev/null)" ]; then log "earshot models present: $EARSHOT_HOME/hf"
+    elif EARSHOT_HOME="$EARSHOT_HOME" with_timeout 1800 "$PY" -m earshot doctor --load >/dev/null 2>&1; then
+      log "earshot models downloaded (~1.4 GB): $EARSHOT_HOME/hf"
+    else warn "earshot's models did not download: they download on its first use"; fi
+  else
+    warn "earshot did not install: the production works without its ears (re-run: bash $REPO/bin/setup.sh --full)"
+  fi
+fi
 if [ "$DEV" = 1 ]; then
   log "installing dev tools: pytest"
   uvpip pytest
@@ -551,6 +612,7 @@ export PLAYWRIGHT_BROWSERS_PATH="$SLOP_HOME/ms-playwright"
 export UV_PYTHON_INSTALL_DIR="$SLOP_HOME/python"
 export UV_PYTHON_BIN_DIR="$SLOP_HOME/python/bin"
 export UV_CACHE_DIR="$SLOP_HOME/cache/uv"
+export EARSHOT_HOME="$EARSHOT_HOME"
 case ":\$PATH:" in *":$SLOP_HOME/bin:"*) ;; *) export PATH="$SLOP_HOME/bin:\$PATH" ;; esac
 EOF
 mv -f "$SLOP_HOME/env.sh.tmp" "$SLOP_HOME/env.sh"
@@ -561,10 +623,16 @@ cat >"$BIN/slop.tmp" <<EOF
 . "$SLOP_HOME/env.sh"
 PYTHONPATH="$REPO\${PYTHONPATH:+:\$PYTHONPATH}"
 export PYTHONPATH
+[ -x "$PY" ] || exec sh "$REPO/bin/slop" "\$@"   # the venv is gone (a computer reset): that launcher says what to run
 exec "$PY" -m slop "\$@"
 EOF
 chmod 0755 "$BIN/slop.tmp"; mv -f "$BIN/slop.tmp" "$BIN/slop"
 printf '%s\n' "$PROFILE" >"$SLOP_HOME/profile"
+if on_box; then shell_rc_fix; fi   # plain `slop` in new shells; a computer reset clears the home folder
+if [ -f "$SLOP_HOME/relay/config.json" ]; then   # the production's tools follow this install (earshot, after a reset)
+  if "$BIN/slop" --json relay setup >/dev/null 2>&1; then log "the production's tools refreshed (slop relay setup)"
+  else warn "slop relay setup did not finish (Opus signed out?): run it once Opus is signed in"; fi
+fi
 
 # ---- 7. summary
 log "done. profile=$PROFILE browser=$BROWSER torch=$TORCH_SOURCE"

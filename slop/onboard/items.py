@@ -93,6 +93,9 @@ CATALOG = [
                  "own limit"),
     dict(id="arena", group="keys", title="Are.na token (ARENA_TOKEN)", kind="check", need="ooo",
          cost="free", unlocks="Your own Are.na channels feed the taste profile"),
+    dict(id="elevenlabs", group="keys", title="ElevenLabs key (ELEVENLABS_API_KEY)", kind="check", need="ooo",
+         cost="your ElevenLabs plan's credits; the production prices each call and asks first",
+         unlocks="ElevenLabs voices, speech, sound effects and music for the production (its MCP tools)"),
     dict(id="higgsfield", group="connectors", title="Higgsfield connector", kind="record", need="ccc",
          cost="your Higgsfield credits; every video is priced before it is made (get_cost)",
          unlocks="Higgsfield video: Seedance 2.5 sung clips (copies the vocals more reliably on stubborn windows), "
@@ -167,7 +170,7 @@ ITEM_IDS = [c["id"] for c in CATALOG]
 PRIORITY = ["tier", "toolkit", "path", "doctor", "openrouter", "higgsfield", "api-images", "video", "suno", "lyria",
             "midjourney", "mj-profile", "full-profile", "coding-agents", "agent-claude", "agent-codex", "agent-muse",
             "agent-gemini", "home-claude", "home-codex", "home-muse", "home-gemini", "gpu", "first-project", "taste",
-            "arena", "drive", "suno-signin", "mj-signin", "codex-images"]
+            "arena", "elevenlabs", "drive", "suno-signin", "mj-signin", "codex-images"]
 # `video` is said by the tier unlocks and by openrouter / higgsfield themselves
 HEADLINE = set(ITEM_IDS) - {"tier", "toolkit", "path", "doctor", "coding-agents", "video"}
 # items that follow other items (done as soon as one of them is): never marked done by hand, never a step of their own
@@ -192,6 +195,7 @@ ALIASES = {"claude": "agent-claude", "codex": "agent-codex", "muse": "agent-muse
            "chatgpt": "agent-codex", "mj": "midjourney", "midjourney-plan": "midjourney", "mj-plan": "midjourney",
            "suno-plan": "suno", "hf": "higgsfield", "gdrive": "drive", "google-drive": "drive", "home-gpu": "gpu",
            "project": "first-project", "key": "openrouter", "openrouter-key": "openrouter", "are.na": "arena",
+           "eleven": "elevenlabs", "11labs": "elevenlabs",
            "doctor-check": "doctor", "taste-profile": "taste", "install": "toolkit", "full": "full-profile",
            "agents": "coding-agents", "agent-plans": "coding-agents", "plans": "coding-agents", "clips": "video",
            "video-clips": "video"}
@@ -678,6 +682,15 @@ def _arena(ctx: Ctx) -> dict:
             "do": "only if the user has Are.na channels: ask for ARENA_TOKEN with the secure secret card"}
 
 
+def _elevenlabs(ctx: Ctx) -> dict:
+    if (ctx.env or {}).get("ELEVENLABS_API_KEY"):
+        return {"raw": "done", "why": "ELEVENLABS_API_KEY is set (slop relay setup gives the production its tools)"}
+    return {"raw": "todo", "next_skill": skill("setup-accounts"),
+            "why": "ELEVENLABS_API_KEY is not set (only for ElevenLabs voices, sound effects and music)",
+            "do": "only if the user has an ElevenLabs account: ask for ELEVENLABS_API_KEY with the secure secret card, "
+                  "then: slop --json relay setup"}
+
+
 def _connector(ctx: Ctx, iid: str, name: str, extra: str) -> dict:
     m = _mark(ctx, iid)
     if m and m.get("state") == "done":
@@ -1092,7 +1105,8 @@ def _first_project(ctx: Ctx) -> dict:
 
 
 FUNCS = {"tier": _tier, "toolkit": _toolkit, "path": _path, "doctor": _doctor, "full-profile": _full,
-         "openrouter": _openrouter, "arena": _arena, "higgsfield": _higgsfield, "drive": _drive, "suno": _suno,
+         "openrouter": _openrouter, "arena": _arena, "elevenlabs": _elevenlabs, "higgsfield": _higgsfield,
+         "drive": _drive, "suno": _suno,
          "suno-signin": _suno_signin, "lyria": _lyria, "midjourney": _midjourney, "mj-profile": _mj_profile,
          "mj-signin": _mj_signin, "api-images": _api_images, "codex-images": _codex_images, "video": _video,
          "coding-agents": _coding_agents, "gpu": _gpu, "taste": _taste, "first-project": _first_project}

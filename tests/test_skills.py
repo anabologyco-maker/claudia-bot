@@ -39,7 +39,7 @@ _spec.loader.exec_module(BR)
 CLONE = "git clone -q https://github.com/anabologyco-maker/claudia-bot /workspace/claudia"
 PIN = f"git -C /workspace/claudia checkout -q v{__version__}"
 SETUP = "bash /workspace/claudia/bin/setup.sh --minimal && bash /workspace/claudia/bin/setup.sh --full"
-ENV_LINE = "grep -qs claudia/env.sh ~/.bashrc || echo '. /workspace/.claudia/env.sh' >> ~/.bashrc"
+ENV_LINE = "It also puts back the PATH line in ~/.bashrc and ~/.profile"   # setup.sh's shell_rc_fix does it
 SKILL_FILES = [SKILLS / s / "SKILL.md" for s in BR.ORDER]
 SOURCES = SKILL_FILES + [SKILLS / "profile.md", SKILLS / "memory.md"] + sorted((SKILLS / "routines").glob("*.md"))
 # commands that need no project (everything else must name one with -p / --project); per file: a box-level job
@@ -207,6 +207,7 @@ def test_setup_self_checks_pins_and_installs():
     assert "test -f /workspace/claudia/bin/setup.sh || " + CLONE in setup, "a staged checkout is kept"
     assert "/workspace/claudia/bin/slop" in setup and "/workspace/.claudia/bin/slop" in read(SKILLS / "profile.md")
     assert ENV_LINE in read(SKILLS / "claudia-toolkit" / "SKILL.md"), "the repair after a computer update"
+    assert "if on_box; then shell_rc_fix; fi" in read(ROOT / "bin" / "setup.sh"), "setup restores PATH on the box"
     assert "bash /workspace/claudia/bin/setup.sh --check --json" in setup
     welcome = read(SKILLS / "claudia-welcome" / "SKILL.md")
     line = next(ln for ln in welcome.splitlines() if "/home/box/sand-data/workflows" in ln)

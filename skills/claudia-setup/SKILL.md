@@ -9,11 +9,11 @@ You set up; Opus makes. The main path: the claudia.gallery MCP, the toolkit, Opu
 
 ## Reply 1 - what they have or will get
 Only after the welcome (skill claudia-welcome) and its "Set me up?" answer. Welcome not shown in this chat yet (an install message can skip it): run skill claudia-welcome now and stop here. Never repeat the welcome.
-One multi-select widget "Which do you have, or are willing to get?": Claude Max / Claude Pro / ChatGPT Plus or Pro / X Premium or SuperGrok / OpenRouter key / Suno Pro or Premier / Midjourney / Google Drive (free: how I send you videos) (Just the basics: only the first four, plus Google Drive).
-An account they will get but do not have yet: at its step below, first send its sign-up page (claude.ai, chatgpt.com, grok.com, openrouter.ai, suno.com, midjourney.com, accounts.google.com) and go on when they say done; "later": skip it for now ("setup" brings it back).
+One multi-select widget "Which do you have, or are willing to get?": Claude Max / Claude Pro / ChatGPT Plus or Pro / X Premium or SuperGrok / OpenRouter key / Suno Pro or Premier / Midjourney / ElevenLabs / Google Drive (free: how I send you videos) (Just the basics: only the first four, plus Google Drive).
+An account they will get but do not have yet: at its step below, first send its sign-up page (claude.ai, chatgpt.com, grok.com, openrouter.ai, suno.com, midjourney.com, elevenlabs.io, accounts.google.com) and go on when they say done; "later": skip it for now ("setup" brings it back).
 
 ## Reply 2 - install (no spend)
-1. Code: `export GIT_TERMINAL_PROMPT=0; test -f /workspace/claudia/bin/setup.sh || git clone -q https://github.com/anabologyco-maker/claudia-bot /workspace/claudia; git -C /workspace/claudia checkout -q v0.3.5` (no tag: fine).
+1. Code: `export GIT_TERMINAL_PROMPT=0; test -f /workspace/claudia/bin/setup.sh || git clone -q https://github.com/anabologyco-maker/claudia-bot /workspace/claudia; git -C /workspace/claudia checkout -q v0.3.6` (no tag: fine).
 2. Toolkit: `bash /workspace/claudia/bin/setup.sh --check --json`. `ok` true and `profile` full: say "toolkit ready" (no install). Else say "installing, about 5 min" and run it detached (the profile's turn rule):
    `nohup setsid bash -c 'bash /workspace/claudia/bin/setup.sh --minimal && bash /workspace/claudia/bin/setup.sh --full' > /workspace/claudia-install.log 2>&1 < /dev/null &`
 3. Record their answers (after the install's `--minimal` part, `slop` works):
@@ -29,7 +29,7 @@ After the yes: add a custom MCP server named claudia at https://claudia.gallery/
 ## Reply 4 on - sign-ins, one per reply (the person signs in, never you)
 1. Opus: skill setup-agents, On the box: install claude and the person signs it in (ChatGPT only: codex). Then `slop --json relay setup` (ChatGPT only: add `--engine codex`; it gives Opus the claudia.gallery MCP, Claudia's skill and its brief). `ok` false: do its `next`. Then wake-ups (optional; its key needs the desktop app once): skill claudia-relay, Wake-ups.
 2. X for Grok Imagine (X Premium or SuperGrok): open https://grok.com/imagine in your browser. Signed out: "Please sign in to grok.com with your X account in my browser. I never type passwords." Wait for their "done"; you see the Imagine page signed in: add a memory line "grok.com signed in" with today's date. No X plan: say Opus will use the other routes; go on.
-3. Optional, only what they ticked: the OpenRouter key (sung lip-sync clips, API stills): skill setup-accounts. Suno and Midjourney: skill setup-accounts (they sign in once in your browser; from then on you run them).
+3. Optional, only what they ticked: the OpenRouter key (sung lip-sync clips, API stills): skill setup-accounts. Suno and Midjourney: skill setup-accounts (they sign in once in your browser; from then on you run them). ElevenLabs (Opus's voices and sound effects): skill setup-accounts.
 4. Google Drive (ticked): skill drive, Setup (connect it, then one test clip by link).
 5. What is done and what is left: `slop --json onboard status` (send its `text`). Long installs: the profile's turn rule.
 

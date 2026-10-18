@@ -33,7 +33,9 @@ from . import project as P
 from .browser import EnginePage, apply_env
 
 RECYCLE_EVERY = 200          # a fresh page every 200 frames: bounded memory on long runs
-GIB_PER_WORKER = 1.7         # measured Chromium RSS per rendering worker
+GIB_PER_WORKER = 3.5         # Chromium per rendering worker on real films (3-4 GiB seen on a 15 GiB box)
+RESERVE_GIB = 3.0            # left free for Grok's own browser and the rest of the box
+STALL_S = float(os.environ.get("SLOP_RENDER_STALL_S") or 300)   # no frame for this long: a worker died
 JPEG_Q = .95
 FIX_MEDIA = ("Fix: run `slop edit export` (it rewrites engine/assets/plates.js and clips.js from plates/picks.json and "
              "the clip takes), check that plates/picks.json and edit/edl.json name files that exist, then run this again")
@@ -109,12 +111,48 @@ def _cpus() -> int:
 
 def default_workers(n_frames: int | None = None) -> int:
     w = max(1, min(4, _cpus() // 2))
-    gib = _avail_gib()
-    if gib is not None:
-        w = max(1, min(w, int(gib // GIB_PER_WORKER)))
+    cap = memory_workers()
+    if cap is not None:
+        w = max(1, min(w, cap))
     if n_frames is not None:
         w = max(1, min(w, n_frames))
     return w
+
+
+def memory_workers() -> int | None:
+    """How many rendering browsers the free memory carries, after the reserve for Grok's browser (None: unknown)."""
+    gib = _avail_gib()
+    return None if gib is None else max(1, int(max(0.0, gib - RESERVE_GIB) // GIB_PER_WORKER))
+
+
+def _descendants(root: int) -> list[int]:
+    """Every live process under root (Linux /proc; elsewhere none)."""
+    kids: dict[int, list[int]] = {}
+    for st in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            s = st.read_text()
+            ppid = int(s[s.rindex(")") + 2:].split()[1])
+            kids.setdefault(ppid, []).append(int(st.parent.name))
+        except (OSError, ValueError, IndexError):
+            continue
+    out, todo = [], [root]
+    while todo:
+        for c in kids.get(todo.pop(), []):
+            out.append(c)
+            todo.append(c)
+    return out
+
+
+def _kill_descendants() -> int:
+    import signal
+    n = 0
+    for pid in _descendants(os.getpid()):
+        try:
+            os.kill(pid, signal.SIGKILL)
+            n += 1
+        except OSError:
+            pass
+    return n
 
 
 def _log(msg: str) -> None:
@@ -262,18 +300,30 @@ def render_frames(pdir: Path, *, t_from: float | None = None, t_to: float | None
         warns.append(stale)
     span = (int(round(a * fps)), P.frame_count(b, fps))     # [first, end) frame indices of the range
     allidx = list(range(span[0], span[1], every))
-    if force:
-        for i in allidx:
-            (outdir / f"f{i:05d}.jpg").unlink(missing_ok=True)
-    todo = [i for i in allidx if not (outdir / f"f{i:05d}.jpg").exists()]
+    redraw = outdir / ".redraw-incomplete"           # a --force run that has not finished: encode refuses
+    if force:                                         # frames are replaced one by one, never deleted first: a crash
+        redraw.write_text(json.dumps({"span": list(span), "every": every}))   # leaves whole (older) frames, no holes
+        todo = list(allidx)
+    else:
+        todo = [i for i in allidx if not (outdir / f"f{i:05d}.jpg").exists()]
     tl = load_timemap(pdir) if timemap else (lambda t: t)
     nw = workers or default_workers(len(todo))
+    cap = memory_workers()
+    if workers and cap is not None and workers > cap:
+        warns.append(f"--workers {workers} would need about {workers * GIB_PER_WORKER:.0f} GiB; the free memory "
+                     f"carries {cap} (with {RESERVE_GIB:g} GiB kept for Grok's browser): using {cap}")
+        nw = cap
     nw = max(1, min(nw, max(1, len(todo))))
+    try:
+        os.nice(10)                                   # renders yield to Grok's browser and the relay
+    except (AttributeError, OSError):
+        pass
     _log(f"render: {len(todo)} frames to draw ({len(allidx) - len(todo)} already done) with {nw} worker(s) -> {outdir}")
     chunks = [todo[k::nw] for k in range(nw)]
     failed: list[dict] = []
     missing_seen: set[str] = set()
     lock = threading.Lock()
+    last = [time.monotonic()]                         # when the last frame landed (the watchdog reads it)
     sync_playwright = _sync_playwright()
     stage = f"render {'vertical ' if spec['h'] > spec['w'] else ''}frames"
     prog = progress.Counter(len(allidx), stage, start=len(allidx) - len(todo),
@@ -315,6 +365,7 @@ def render_frames(pdir: Path, *, t_from: float | None = None, t_to: float | None
                     tmp = outdir / f"f{i:05d}.jpg.tmp"
                     tmp.write_bytes(data)
                     os.replace(tmp, outdir / f"f{i:05d}.jpg")
+                    last[0] = time.monotonic()
                     done += 1
                     prog.add(1, f"{stage}: frame f{i:05d} ({i / fps:.2f} s)")
                     if done % 100 == 0:
@@ -324,9 +375,22 @@ def render_frames(pdir: Path, *, t_from: float | None = None, t_to: float | None
         return done
 
     t0 = time.monotonic()
+    last[0] = t0
+    ex = cf.ThreadPoolExecutor(nw)
     try:
-        with cf.ThreadPoolExecutor(nw) as ex:
-            n = sum(ex.map(work, enumerate(chunks)))
+        futs = [ex.submit(work, kc) for kc in enumerate(chunks)]
+        while True:                                   # a watchdog: a worker whose browser was killed (memory) can
+            done_f, pending = cf.wait(futs, timeout=5)  # block forever; no frame for STALL_S fails the render instead
+            if not pending:
+                break
+            if time.monotonic() - last[0] > STALL_S:
+                killed = _kill_descendants()
+                ex.shutdown(wait=False, cancel_futures=True)
+                raise SlopError(f"render stalled: no frame for {STALL_S:.0f} s (a worker or its browser died, most "
+                                f"often for memory; {killed} process(es) stopped). The frames drawn so far are kept: "
+                                f"re-run the same command to resume, with fewer --workers")
+        n = sum(f.result() for f in futs)
+        ex.shutdown(wait=True)
     finally:
         prog.finish()
     el = time.monotonic() - t0
@@ -336,6 +400,8 @@ def render_frames(pdir: Path, *, t_from: float | None = None, t_to: float | None
     ms = round(el / max(n, 1) * 1000)
     have = sum(1 for i in allidx if (outdir / f"f{i:05d}.jpg").exists())
     ok = not failed and have == len(allidx)
+    if ok:
+        redraw.unlink(missing_ok=True)
     text = (f"{have}/{len(allidx)} frames in {outdir} ({n} new, {ms} ms/frame effective, {nw} workers)"
             + ("" if ok else f" — {len(failed)} failed: re-run the same command to retry them (resumable)"))
     if missing_seen:

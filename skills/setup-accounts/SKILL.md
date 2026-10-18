@@ -1,9 +1,9 @@
 ---
 name: setup-accounts
-description: Use when setting up or fixing an account the videos use - the OpenRouter key and its spend limit, the Higgsfield or Google Drive connector, the Suno plan and sign-in, the Midjourney plan, personal profile code and sign-in, an Are.na token - or when a key is rejected or expired.
+description: Use when setting up or fixing an account the videos use - the OpenRouter key and its spend limit, the Higgsfield or Google Drive connector, the Suno plan and sign-in, the Midjourney plan, personal profile code and sign-in, an Are.na token, an ElevenLabs key - or when a key is rejected or expired.
 ---
 
-# Accounts - keys, connectors, Suno, Midjourney, Are.na
+# Accounts - keys, connectors, Suno, Midjourney, Are.na, ElevenLabs
 
 Each account is one item of `slop --json onboard next` (skill claudia-setup); run it again after each step. You never see, type or store a secret: keys only through the masked secure secret card (it reaches new shells as an environment variable), sign-ins only by the person, in their browser or on the connector's card. Never write an account address, a key or a sign-in code into a note or a file.
 
@@ -33,6 +33,9 @@ SearchPlugins for Google Drive; missing and wanted: the same widget rule. List o
 
 ## Are.na (item arena; optional; docs/30-taste.md §2.4)
 Only if they keep their own channels there (for the taste pool). They create a personal access token on Are.na's developer page (dev.are.na); ask with the masked secure secret card named ARENA_TOKEN; `slop --json onboard next` sees it.
+
+## ElevenLabs (item elevenlabs; optional; Opus's voices, sound effects, music)
+Only if they have an ElevenLabs account. They make an API key at elevenlabs.io (Developers > API Keys; a credit limit on the key is wise); ask with the masked secure secret card named ELEVENLABS_API_KEY. Then `slop --json relay setup`: it gives Opus the ElevenLabs tools (the key stays in the environment, never in a file). Opus prices every call and asks first.
 
 ## Agents, skipping
 - Claude Code, Codex (ChatGPT plan), Muse Code, Gemini CLI, ChatGPT-plan images: skill setup-agents.

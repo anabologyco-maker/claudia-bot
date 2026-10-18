@@ -25,7 +25,7 @@ Claudia is the open AI popstar from claudia.gallery, the star of ESCAPE VELOCITY
 5. midjourney: Opus's prompts on midjourney.com, every image saved for Opus.
 6. suno: Opus's songs on suno.com, both takes saved for Opus.
 7. drive: finished videos and big files to your Google Drive, sent as a link.
-8. setup-accounts: optional accounts (OpenRouter, Suno, Midjourney, Google Drive).
+8. setup-accounts: optional accounts (OpenRouter, Suno, Midjourney, ElevenLabs, Google Drive).
 9. setup-agents: Claude Code (or Codex) on my computer.
 10. claudia-toolkit: repairs, updates, files in and out.
 

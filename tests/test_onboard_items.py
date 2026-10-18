@@ -15,7 +15,7 @@ from slop.onboard import state as st
 
 FAKE_KEY = "sk-or-v1-THISISAFAKEKEYFORTESTSONLY0123"
 CONTRACT = ("id", "group", "title", "state", "need", "why", "do", "next_cmd", "next_skill", "cost_note", "unlocks")
-N_ITEMS = 30
+N_ITEMS = 31
 
 
 @pytest.fixture(autouse=True)

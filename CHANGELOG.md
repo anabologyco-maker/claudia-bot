@@ -3,6 +3,18 @@
 Each release is a tag `vX.Y.Z`. A bot on an older release reminds its person once ("say update"); `slop update apply`
 installs it and prints the newest entries below.
 
+## 0.3.6
+- No more double songs, repeated uploads or two Grok runs fighting over the browser: each job is claimed before it runs, one at a time, and a wake-up waits while Grok is working. A job over 6 hours old is never run without asking Opus first.
+- New for Opus and Codex: earshot, the production's ears (it describes, times and critiques every take, mix and cut; the full install adds it), and ElevenLabs voices, sound effects and music with your own key (optional; every paid call needs your yes).
+- Your OpenRouter key: you hear two weeks before it expires or runs out, and as soon as it stops working, so you can send a new one on the secure card.
+- Renders fit the computer's memory and leave room for Grok's browser; a stuck render stops after 5 minutes instead of hanging, a redraw never leaves holes, and two encodes never write at once.
+- Drive: every video Opus sends is under Drive's 100 MB limit (and plays on phones), and Grok asks which Google account to use instead of guessing.
+- After a computer reset, setup puts `slop` back on the PATH, `slop` says what to run instead of crashing, and the setup check no longer reports the toolkit missing.
+- Midjourney: prompts over 800 characters are stopped before they run, prompts are pasted instead of typed (no more typos in words like diamanté), every image is saved as a .png carrying its prompt, and Grok checks personalization is still on after Zoom Out.
+- Grok Imagine: Grok never picks an option your plan locks, and a wiped form is reloaded with a single upload.
+- Wake-ups take the routine's real webhook address (its POST to field in the Grok Bot desktop app); a link to the routine is refused, since it never worked.
+- Files you send reach Opus as files, and Opus going quiet for 20 minutes is flagged as possibly stuck, with the way out.
+
 ## 0.3.5
 - Opus can close a job it no longer needs: it shows as cancelled, not failed.
 - Every Midjourney image records the prompt, plate and model that made it.

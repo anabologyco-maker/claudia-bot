@@ -151,7 +151,8 @@ def _setup_ok() -> tuple[bool, str]:
     setup = root() / "bin" / "setup.sh"
     try:
         r = subprocess.run(["bash", str(setup), "--check", "--json"], capture_output=True, text=True, timeout=180)
-        return bool(json.loads(r.stdout or "{}").get("ok")), ""
+        out = json.loads(r.stdout or "{}")
+        return bool(out.get("ok")) and not out.get("optional"), ""      # a new optional piece (earshot): install it
     except (OSError, ValueError, subprocess.SubprocessError) as e:
         return False, str(e)[:200]
 

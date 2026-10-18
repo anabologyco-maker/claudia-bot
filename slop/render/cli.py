@@ -10,8 +10,8 @@ Steps (all resumable / idempotent; --json prints one JSON object):
   lyrics    the lyric gate: every sung token drawn at its time -> N/N (fails otherwise; --vertical: the 9:16 layout).
             ARCHITECTURE §5 calls this step `lyrics-gate`; the command is `slop render lyrics`.
   encode    frames -> out/master.mp4 (x264 CRF 16, BT.709-tagged, AAC, +faststart), verified with ffprobe;
-            --share: the chat copy out/share.mp4 under --max-mib (default 190; Grok chat ≤ 200 MiB): a copy of the
-            current master when it fits, else a two-pass x264 encode
+            --share: the chat copy out/share.mp4 under --max-mib (default 95, under the 100 MB Drive upload limit;
+            up to 200): a copy of the current master when it fits, else a two-pass x264 encode
   check     flash check (WCAG 2.3.1, ≤ 3 flashes/s) on out/master.mp4 + history check (frames are pure functions of t);
             --layers: ONLY the density check (every shot's mid-point frame has ≥ 3 ordered layers) -> render/layers.json
             (--vertical: render/layers-vertical.json)
@@ -165,7 +165,7 @@ def cmd_encode(a) -> dict:
             pdir, vertical=a.vertical, max_mib=SHARE_DEFAULT_MIB if a.max_mib is None else a.max_mib, frames=a.frames,
             out=a.out))
     if a.max_mib is not None:
-        raise SlopError("--max-mib goes with --share (the chat copy): slop render encode --share --max-mib 190")
+        raise SlopError("--max-mib goes with --share (the chat copy): slop render encode --share --max-mib 95")
     profile = "review" if a.review else "draft" if a.draft else "master"
     return _tracked("render encode", 1, lambda: encode(pdir, frames=a.frames, out=a.out, profile=profile,
                                                        audio=not a.no_audio, allow_gaps=a.allow_gaps, vertical=a.vertical))
@@ -253,11 +253,13 @@ def register(subparsers) -> None:
     s.add_argument("--from", dest="t_from", type=float, help="start, seconds (default 0)")
     s.add_argument("--to", dest="t_to", type=float, help="end, seconds (default: song end)")
     s.add_argument("--every", type=int, default=1, help="render every Nth frame (drafts / motion sampling)")
-    s.add_argument("--workers", type=int, help="parallel browsers (default min(4, cpus/2), ~1.7 GiB RAM each)")
+    s.add_argument("--workers", type=int, help="parallel browsers (default min(4, cpus/2), capped by the free memory: "
+                                               "~3.5 GiB each, 3 GiB kept for Grok's browser)")
     s.add_argument("--size", help="WxH (default project.json size; frames go to render/frames-WxH)")
     s.add_argument("--out", type=Path, help="frames directory (default render/frames)")
     s.add_argument("--timemap", action="store_true", help="map final-song time through edit/timemap.json")
-    s.add_argument("--force", action="store_true", help="re-render frames that already exist in the range")
+    s.add_argument("--force", action="store_true", help="redraw frames that already exist in the range, in place "
+                                                         "(never delete them first: a crash would leave holes)")
     s.add_argument("--allow-missing", action="store_true",
                    help="draw placeholders for missing media/fonts instead of stopping (previews only; encode refuses a master)")
     s.set_defaults(func=cmd_frames)
@@ -309,11 +311,11 @@ def register(subparsers) -> None:
     s.add_argument("--allow-gaps", action="store_true", help="hold frames over missing ones (previews only)")
     s.add_argument("--no-audio", action="store_true", help="silent encode (no audio/song.wav)")
     s.add_argument("--share", action="store_true",
-                   help="the chat copy -> out/share.mp4 (--vertical: out/share-vertical.mp4) under --max-mib (Grok chat "
-                        "takes ≤ 200 MiB): a copy of the current master when it fits, else two-pass x264 with the master "
-                        "colour tags; ffprobe-verified incl. size")
+                   help="the chat copy -> out/share.mp4 (--vertical: out/share-vertical.mp4) under --max-mib (Drive "
+                        "takes ≤ 100 MB): a copy of the current master when it fits, else two-pass x264 with the "
+                        "master colour tags; ffprobe-verified incl. size")
     s.add_argument("--max-mib", type=float, default=None, metavar="MIB",
-                   help="--share size target in MiB (default 190; at most 200)")
+                   help="--share size target in MiB (default 95: under the 100 MB Drive upload limit; at most 200)")
     s.set_defaults(func=cmd_encode)
 
     s = sp.add_parser("check", help="flash check on out/master.mp4 + history check")

@@ -9,7 +9,7 @@ Port of the reference pipeline's engine/render.py + tools/flashcheck.py + tools/
   injected into the page before it runs;
 - frames are the browser's own JPEG (q .95) written atomically — the original re-encoded them through PIL;
 - no remote render host: everything renders locally on CPU (SwiftShader); workers default to min(4, cpus // 2), capped
-  by available RAM (~1.7 GiB per worker);
+  by available RAM (~3.5 GiB per worker, 3 GiB kept for Grok's browser);
 - `frames --every N` renders every Nth frame (drafts and motion sampling; the original had no sampling option);
 - encode adds a `setparams` filter so the BT.709 / sRGB-transfer tags are on the frames as well as the stream, and
   verifies with ffprobe the tags, size, frame count and duration (± 1 frame of the song); a master needs every frame

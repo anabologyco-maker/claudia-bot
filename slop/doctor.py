@@ -320,8 +320,8 @@ def check_openrouter(offline: bool = False) -> dict:
     if not info.get("ok"):
         status = "warn" if info.get("status") == 0 else "fail"
         return _check("openrouter", status, info.get("error") or "key check failed",
-                      "check the key in the OpenRouter dashboard, then ask the bot for a new secret card"
-                      if status == "fail" else "allow openrouter.ai on the network, then re-run slop doctor", **data)
+                      util.OPENROUTER_REPLACE if status == "fail" else
+                      "allow openrouter.ai on the network, then re-run slop doctor", **data)
     lim, rem, used = info.get("limit"), info.get("limit_remaining"), info.get("usage")
     if lim is None:
         detail = f"key valid; used {util.money(used)}; no key spend limit set"
@@ -333,6 +333,12 @@ def check_openrouter(offline: bool = False) -> dict:
         status = "ok"
         if isinstance(rem, (int, float)) and rem < 2:
             status, fix = "warn", "the key is nearly at its spend limit: raise it in the OpenRouter dashboard"
+    eb = info.get("effective_budget") if isinstance(info.get("effective_budget"), dict) else {}
+    if isinstance(eb.get("remaining_usd"), (int, float)) and eb["remaining_usd"] < 2:
+        detail += (f"; its {eb.get('reset_interval') or ''} budget has {util.money(eb['remaining_usd'])} left"
+                   + (f" (resets {str(eb['resets_at'])[:10]})" if eb.get("resets_at") else ""))
+        status = "warn"
+        fix = fix or "raise the budget in the OpenRouter dashboard (or wait for it to reset)"
     if info.get("is_free_tier"):
         detail += "; FREE tier (paid models will fail until credits are added)"
         status = "warn"
@@ -343,8 +349,7 @@ def check_openrouter(offline: bool = False) -> dict:
         if days < 14:
             detail += f"; the key EXPIRES {exp.strftime('%Y-%m-%d')} ({max(days, 0):.0f} days)"
             status = "warn"
-            fix = ("ask the owner for a new OpenRouter key before it expires (then a new secure secret card)"
-                   + (f"; {fix}" if fix else ""))
+            fix = util.OPENROUTER_REPLACE + (f"; {fix}" if fix else "")
     return _check("openrouter", status, detail, fix, **data)
 
 
@@ -410,7 +415,8 @@ def check_ram() -> dict:
     if tot < 7.5 * 1024 ** 3:
         return _check("ram", "warn", det + " - under 8 GB: render with --workers 2 and run one heavy step at a time",
                       **m)
-    return _check("ram", "ok", det + " (render workers: <= 4 on 15 GB)", **m)
+    w = max(1, int(max(0.0, av / 1024 ** 3 - 3.0) // 3.5)) if av else None   # = render.frames.memory_workers()
+    return _check("ram", "ok", det + (f" (render workers now: {w}, about 3.5 GB each)" if w else ""), **m)
 
 
 def check_cpu() -> dict:

@@ -116,14 +116,27 @@ def claude_mcp() -> int:
         s = servers.get(ARGS[2])
         if not s:
             out(f"No MCP server found with name: {ARGS[2]}"); return 1
+        if s.get("command"):                          # stdio
+            out(f"{ARGS[2]}:\n  Scope: User config (available in all your projects)\n  Type: stdio\n  Command: "
+                f"{s['command']}\n  Args: {' '.join(s['args'])}\n  Environment:\n"
+                + "".join(f"    {k}={v}\n" for k, v in s["env"].items()))
+            return 0
         out(f"{ARGS[2]}:\n  Scope: User config (available in all your projects)\n  Type: http\n  URL: {s['url']}")
         return 0
     if ARGS[1:2] == ["add"]:
-        pos = [a for i, a in enumerate(ARGS[2:], 2)
-               if not a.startswith("-") and ARGS[i - 1] not in ("--transport", "--scope", "-s", "-t")]
-        name, url = pos[0], pos[1]
+        head, cmd = (ARGS[2:ARGS.index("--")], ARGS[ARGS.index("--") + 1:]) if "--" in ARGS else (ARGS[2:], [])
+        env = {head[i + 1].split("=", 1)[0]: head[i + 1].split("=", 1)[1] for i, a in enumerate(head)
+               if a in ("-e", "--env")}
+        pos = [a for i, a in enumerate(head) if not a.startswith("-")
+               and (i == 0 or head[i - 1] not in ("--transport", "--scope", "-s", "-t", "-e", "--env"))]
+        name = pos[0]
         if name in servers:
             sys.stderr.write(f"MCP server {name} already exists in user config\n"); return 1
+        if cmd:
+            servers[name] = {"command": cmd[0], "args": cmd[1:], "env": env, "argv": ARGS}
+            f.write_text(json.dumps(servers))
+            out(f"Added stdio MCP server {name} with command: {' '.join(cmd)} to user config"); return 0
+        url = pos[1]
         servers[name] = {"url": url, "argv": ARGS}
         f.write_text(json.dumps(servers))
         out(f"Added HTTP MCP server {name} with URL: {url} to user config"); return 0

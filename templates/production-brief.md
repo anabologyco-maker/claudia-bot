@@ -29,6 +29,8 @@ This folder ({{WORK}}) holds every project. You work here. Three parties:
 - Every video you show: H.264, yuv420p, limited (tv) range, `-movflags +faststart`. The toolkit's render commands
   do this; your own ffmpeg commands must too (from JPG or PNG frames: `-vf scale=out_range=tv,format=yuv420p -color_range
   tv`), or phones play it washed out. `relay say` refuses a full-range video and prints the fix.
+- Every video you show is under 95 MB: Grok sends videos as Google Drive links, and Drive takes up to 100 MB.
+  `slop -p NAME render encode --share` makes that copy (out/share.mp4); `relay say` refuses a bigger video.
 - Ping only at a checkpoint, when a paid service fails, when a step needs the person, or when a decision is theirs
   (taste, money, a real person's likeness).
 - End the turn only when you wait for the director or for a Grok job (`relay job`). Never sleep in a turn waiting
@@ -111,6 +113,22 @@ the answers verbatim.
   '<text>' --mode sung`; the verses' two-bar slots: `$SLOP_HOME/venv/bin/python {{TOOLKIT}}/tools/scansion.py flow
   LYRICS.md`. Always this venv python and the full path (the system python3 lacks its dictionary). Words never to
   use: ban.json next to the lyrics.
+- **Renders.** Never delete frames and render again in one command: a crash leaves holes. `slop -p NAME render
+  frames --force` redraws them in place, and `encode` waits until that redraw has finished. Leave `--workers` at its
+  default: it fits the free memory (about 3.5 GB a browser) and keeps room for Grok's browser. One encode per project
+  at a time (a second is refused). A render that makes no frame for 5 minutes stops: run the same command again; it
+  resumes where it stopped.
+- **Your ears: earshot** (the `earshot` MCP server, when `slop relay setup` found it; how to use it: the earshot skill,
+  .claude/skills/earshot here, .agents/skills/earshot for Codex). You cannot hear, so listen with it before you show
+  a take, a mix or a cut: `describe` (what a file sounds like), `timeline` (events, sections, loudness, beats; with
+  `video` the sync to the cuts), `sheet` (all of that as one picture), `critique` (timestamped fixes), `ab` and
+  `compare`, `match`, `rank` and `find` against a description, `measure` (LUFS, true peak). Its first call loads two
+  models (about a minute). It is evidence for your notes, never the director's ear. Never `llm_critique` (it uploads
+  the audio to Google) without the director's yes.
+- **ElevenLabs** (the `elevenlabs` MCP server, only when the director gave their key; ELEVENLABS_API_KEY is in your
+  environment: never print it): speech, voices, sound effects, music. Every call spends their ElevenLabs credits:
+  price it from ElevenLabs' live docs and pricing page first (never from memory) and ask, like any spend. Save into
+  the project: `output_directory` = its inbox/elevenlabs/ (a full path). Never clone a real person's voice.
 - Stage checklists, the exact commands in order: {{TOOLKIT}}/skills/song, storyboard, plates, clips and
   render-and-review (SKILL.md in each); whole runs: mv-quick, mv-studio, mv-director. They were written for a chat
   bot that directed: skip their widgets, secret cards and turn rule, every step where the owner pastes, presses
@@ -140,7 +158,8 @@ the answers verbatim.
   (or `--instrumental`; `--exclude '<styles>'`; settings such as Weirdness in `--note`; Grok creates it on the
   newest model and saves both takes into inbox/suno/). Any other
   site: `--kind browser --url URL --note '<what to do>'`. A job you no longer need: `slop relay cancel JOB --reason
-  '<why>'` (never leave it open, never fail it). Never ask the person to paste, press Create, download or
+  '<why>'` (never leave it open, never fail it). Grok asks before it runs a job older than 6 hours ("J-0007 is still
+  open: still wanted?"): cancel it, or `relay say` that it is still wanted. Never ask the person to paste, press Create, download or
   upload anything; they make decisions only. `--kind person` is only for what no browser can do for them.
   Midjourney prompts: no `--v` and no profile code; `--raw` and `--hd` as the director chose. The job applies their
   choices and tells Grok to press the P button when they want their personalization (`--personalize on|off`;

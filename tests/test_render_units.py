@@ -136,7 +136,9 @@ def test_default_workers_under_a_cache_filled_cgroup(tmp_path, monkeypatch):
     real = F._avail_gib
     monkeypatch.setattr(F, "_cpus", lambda: 8)
     monkeypatch.setattr(F, "_avail_gib", lambda: real(proc, cg))
-    assert F.default_workers() == 4                 # 7.8 GiB left / 1.7 GiB a worker; before the fix: 1
+    assert F.default_workers() == 1                 # (7.8 GiB left - 3 GiB for Grok's browser) / 3.5 GiB a worker
+    monkeypatch.setattr(F, "_avail_gib", lambda: 20.0)
+    assert F.default_workers() == 4                 # (20 - 3) / 3.5 = 4, and cpus // 2 = 4
 
 
 def test_share_uses_the_master_only_when_it_is_current(demo, monkeypatch):
@@ -168,10 +170,12 @@ def test_share_uses_the_master_only_when_it_is_current(demo, monkeypatch):
 def test_default_workers_follow_affinity_and_cgroup(monkeypatch):
     from slop.render import frames as F
     monkeypatch.setattr(F, "_cpus", lambda: 8)
-    monkeypatch.setattr(F, "_avail_gib", lambda: 13.0)
-    assert F.default_workers() == 4
-    monkeypatch.setattr(F, "_avail_gib", lambda: 3.5)          # a tight cgroup: 2 workers at 1.7 GiB each
+    monkeypatch.setattr(F, "_avail_gib", lambda: 13.0)          # (13 - 3 for Grok's browser) / 3.5 = 2
     assert F.default_workers() == 2
+    monkeypatch.setattr(F, "_avail_gib", lambda: 20.0)
+    assert F.default_workers() == 4
+    monkeypatch.setattr(F, "_avail_gib", lambda: 3.5)          # a tight cgroup: still one worker
+    assert F.default_workers() == 1
     monkeypatch.setattr(F, "_cpus", lambda: 2)
     monkeypatch.setattr(F, "_avail_gib", lambda: None)
     assert F.default_workers() == 1 and F.default_workers(10) == 1

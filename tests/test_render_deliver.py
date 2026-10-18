@@ -339,7 +339,7 @@ def test_master_keeps_the_last_frame_when_the_song_ends_inside_it(demo, rendered
         assert r["ok"], r.get("text") or r.get("error")
         assert r["verify"]["frames"] == 192 and r["verify"]["audio"] == "aac"
         s = slop(capsys, "--project", str(demo), "render", "encode", "--share", "--out", str(tmp_path / "s.mp4"))
-        assert s["ok"] and s["max_mib"] == 190 and s["verify"]["frames"] == 192, s.get("text") or s.get("error")
+        assert s["ok"] and s["max_mib"] == 95 and s["verify"]["frames"] == 192, s.get("text") or s.get("error")
         # out/master.mp4 has these frames but the earlier song: not copied (the share takes the song now in audio/),
         # still the size cap (same pictures): the demo's CRF 16 master is far below 190 MiB's bitrate
         assert not s["copied"] and "another version of song.wav" in s["text"]

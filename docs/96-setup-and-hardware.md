@@ -29,7 +29,8 @@ input that stores a secret as an environment variable on the box.
    Both together take about 5 min (2-3 min measured on the box; the analysis models download with the first
    analysis). The setup probes first (`setup.sh --check --json`) and says "ready" when nothing is left to install;
    it runs the two installs detached, so no shell call times out.
-3. **Keys** through the secure secret card: `OPENROUTER_API_KEY` (with its own credit limit), optional `ARENA_TOKEN`.
+3. **Keys** through the secure secret card: `OPENROUTER_API_KEY` (with its own credit limit), optional `ARENA_TOKEN`
+   and `ELEVENLABS_API_KEY` (the production's ElevenLabs tools; `slop relay setup` turns them on).
 4. **Connectors** the bot sees: Higgsfield (sung clips on the user's credits), optional Google Drive.
 5. **Music and stills plans**: Suno plan and Midjourney plan and personal profile code (never published); the user
    signs in to each once in Grok's browser, and from then on Grok runs them.
@@ -118,6 +119,7 @@ secret card**, which saves them as an environment variable. The toolkit then rea
 |---|---|---|
 | `OPENROUTER_API_KEY` | the user's OpenRouter key (give it its own credit limit) | `slop gen`, `slop spend`, the onboard check |
 | `ARENA_TOKEN` | Are.na personal access token (optional) | `slop taste` import |
+| `ELEVENLABS_API_KEY` | ElevenLabs API key (optional) | the production's ElevenLabs MCP tools (passed by name, never written) |
 | `CLAUDE_LOGIN_CODE` | the code the claude.ai sign-in page shows | `slop agents login claude --code-from-env CLAUDE_LOGIN_CODE` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | a long-lived token from `claude setup-token` on the user's computer | `slop agents login claude --token-from-env CLAUDE_CODE_OAUTH_TOKEN`; Claude jobs |
 | `GEMINI_LOGIN_CODE` | the code Google's sign-in page shows | `slop agents login gemini --code-from-env GEMINI_LOGIN_CODE` |
@@ -128,7 +130,8 @@ Rules the code enforces:
 - `--code-from-env` reads only the engine's own code variable; `--key-from-env` accepts only `GEMINI_API_KEY`.
 - A one-time sign-in code is typed into the waiting sign-in and never printed, logged or stored on disk.
 - Each engine sees only its own sign-in variable: another vendor's agent (which may run shell commands) never sees
-  the user's Claude token. The toolkit's own secrets (`OPENROUTER_API_KEY`, `ARENA_TOKEN`) never reach any agent.
+  the user's Claude token. The toolkit's own secrets (`OPENROUTER_API_KEY`, `ARENA_TOKEN`, `ELEVENLABS_API_KEY`)
+  never reach any agent except the relay's production, the one spender.
 - Variables that would switch an agent from the user's plan to pay-per-token API billing are removed from every agent
   run (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CODEX_API_KEY`, `META_API_KEY`, `GOOGLE_API_KEY` and similar). Codex
   runs with `forced_login_method="chatgpt"`.

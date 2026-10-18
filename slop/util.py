@@ -415,7 +415,9 @@ def http_reachable(url: str, timeout: float = 8) -> tuple[bool, int, str | None]
 
 
 _KEY_FIELDS = ("limit", "limit_remaining", "limit_reset", "usage", "usage_daily", "usage_weekly", "usage_monthly",
-               "is_free_tier", "expires_at", "include_byok_in_limit", "byok_usage")
+               "is_free_tier", "expires_at", "include_byok_in_limit", "byok_usage", "effective_budget")
+OPENROUTER_REPLACE = ("the person makes a new OpenRouter key at openrouter.ai/settings/keys (with a credit limit) and "
+                      "sends it on the masked secure secret card, OPENROUTER_API_KEY (never in chat)")
 
 
 def openrouter_key_info(key: str | None = None, timeout: float = 20) -> dict:
@@ -446,6 +448,29 @@ def openrouter_key_info(key: str | None = None, timeout: float = 20) -> dict:
     else:
         out["error"] = f"OpenRouter /key answered HTTP {status}: {err}"
     return out
+
+
+def openrouter_key_trouble(info: dict) -> str | None:
+    """One sentence when the key fails now or soon (rejected, expired or expiring within 14 days, under $2 left of its
+    limit or budget); None when it is fine, unset or unreachable. Never the key or its label."""
+    if not info.get("present") or info.get("status") == 0:
+        return None
+    if not info.get("ok"):
+        return f"the OpenRouter key no longer works ({info.get('error') or 'rejected'})"
+    exp = parse_iso(info.get("expires_at"))
+    if exp is not None:
+        days = (exp - datetime.now(tz=timezone.utc)).total_seconds() / 86400
+        if days <= 0:
+            return f"the OpenRouter key expired on {exp.strftime('%Y-%m-%d')}"
+        if days < 14:
+            return f"the OpenRouter key expires on {exp.strftime('%Y-%m-%d')} ({days:.0f} days)"
+    rem = info.get("limit_remaining")
+    if info.get("limit") is not None and isinstance(rem, (int, float)) and rem < 2:
+        return f"the OpenRouter key has {money(rem)} left of its {money(info.get('limit'))} limit"
+    eb = info.get("effective_budget") if isinstance(info.get("effective_budget"), dict) else {}
+    if isinstance(eb.get("remaining_usd"), (int, float)) and eb["remaining_usd"] < 2:
+        return f"the OpenRouter key's {eb.get('reset_interval') or ''} budget has {money(eb['remaining_usd'])} left"
+    return None
 
 
 def openrouter_credits(key: str | None = None, timeout: float = 20) -> dict:

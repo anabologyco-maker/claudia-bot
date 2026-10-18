@@ -209,9 +209,43 @@ def check_fresh(pdir: Path, frames: Path) -> tuple[dict | None, list[str] | None
     return rec, (P.fingerprint_changes(rec, cur) if cur["hash"] != rec["hash"] else None)
 
 
+class _ProjectLock:
+    """One encode at a time per project: a second one fails at once instead of writing the same file."""
+
+    def __init__(self, pdir: Path):
+        self.path = Path(pdir) / "render" / ".encode.lock"
+        self.fh = None
+
+    def __enter__(self):
+        import fcntl
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.fh = open(self.path, "w")
+        try:
+            fcntl.flock(self.fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self.fh.close()
+            raise SlopError("another encode is writing in this project right now: wait for it (`slop job list`), "
+                            "then run this again") from None
+        return self
+
+    def __exit__(self, *exc):
+        import fcntl
+        try:
+            fcntl.flock(self.fh, fcntl.LOCK_UN)
+        finally:
+            self.fh.close()
+
+
 def encode(pdir: Path, frames: Path | None = None, out: Path | None = None, profile: str = "master",
            audio: bool = True, allow_gaps: bool = False, vertical: bool = False,
            span: tuple[int, int] | None = None) -> dict:
+    with _ProjectLock(pdir):
+        return _encode(pdir, frames, out, profile, audio, allow_gaps, vertical, span)
+
+
+def _encode(pdir: Path, frames: Path | None = None, out: Path | None = None, profile: str = "master",
+            audio: bool = True, allow_gaps: bool = False, vertical: bool = False,
+            span: tuple[int, int] | None = None) -> dict:
     ffmpeg = _need("ffmpeg")
     fps = P.project_fps(pdir)
     step = "vertical" if vertical else "frames"
@@ -222,6 +256,9 @@ def encode(pdir: Path, frames: Path | None = None, out: Path | None = None, prof
     if not idx:
         raise SlopError(f"no frames in {frames} — run `slop render {step}` first")
     preview = profile == "draft" or allow_gaps
+    if (frames / ".redraw-incomplete").exists() and not preview:
+        raise SlopError(f"a `slop render {step} --force` redraw of {frames} did not finish (old and new frames are "
+                        f"mixed): run the same render command again (it resumes), then encode")
     warns: list[str] = []
     blank = shots_without_picture(pdir)
     if blank:
@@ -340,7 +377,7 @@ def encode(pdir: Path, frames: Path | None = None, out: Path | None = None, prof
 
 # ------------------------------------------------------------------------------------------- the share copy ------
 SHARE_CAP_MIB = 200          # Grok chat's limit for a video file
-SHARE_DEFAULT_MIB = 190      # the default target: 10 MiB of headroom under the cap
+SHARE_DEFAULT_MIB = 95       # the default target: under the 100 MB Drive upload limit (videos reach people via Drive)
 SHARE_AUDIO_KBPS = 192
 SHARE_MAX_KBPS = 20000       # more than this buys nothing visible at 1080p24 (short films stop here, under the cap)
 SHARE_MIN_KBPS = 1500        # below this the lyric type smears in motion: say so
@@ -464,6 +501,12 @@ def master_state(pdir: Path, vertical: bool, src: dict) -> dict:
 
 def share(pdir: Path, vertical: bool = False, max_mib: float = SHARE_DEFAULT_MIB, frames: Path | None = None,
           out: Path | None = None) -> dict:
+    with _ProjectLock(pdir):
+        return _share(pdir, vertical, max_mib, frames, out)
+
+
+def _share(pdir: Path, vertical: bool = False, max_mib: float = SHARE_DEFAULT_MIB, frames: Path | None = None,
+           out: Path | None = None) -> dict:
     """out/share.mp4 (out/share-vertical.mp4), sized to send in Grok chat (≤ max_mib MiB; the chat's limit is 200 MiB).
     When the current master (encoded from the frames now on disk and the song now in audio/) already fits, it is a
     verified byte copy of it. Otherwise a two-pass x264 encode: bitrate from the duration — never above the current
@@ -531,7 +574,7 @@ def share(pdir: Path, vertical: bool = False, max_mib: float = SHARE_DEFAULT_MIB
     if src["kind"] == "frames":
         vin, vf = ["-framerate", f"{fps:g}", "-start_number", "0", "-i", str(src["dir"] / "f%05d.jpg")], VF
     else:
-        vin, vf = ["-i", str(src["file"])], TAG_ONLY       # already BT.709 / tv yuv420p: only the frame tags
+        vin, vf = ["-i", str(src["file"])], "scale=out_range=tv,format=yuv420p," + TAG_ONLY   # never full range out
     if song.is_file():
         st = int(src.get("start") or 0)                  # a stretch hears the song from its own first frame
         ain, amap = [*(["-ss", f"{st / fps:.6f}"] if st else []), "-i", str(song)], ["-map", "0:v:0", "-map", "1:a:0"]
@@ -579,7 +622,7 @@ def share(pdir: Path, vertical: bool = False, max_mib: float = SHARE_DEFAULT_MIB
     ok = bool(v["ok"]) and size_ok
     mib = v.get("bytes", 0) / 1048576
     text = (f"{rel} — {v.get('width')}x{v.get('height')} {v.get('frames')} frames {v.get('video_duration')}s, "
-            f"{mib:.1f} MiB (target ≤ {max_mib:g}; Grok chat takes ≤ {SHARE_CAP_MIB} MiB), two-pass x264 {kbps} kbit/s "
+            f"{mib:.1f} MiB (target ≤ {max_mib:g}; Drive takes ≤ 100 MB), two-pass x264 {kbps} kbit/s "
             f"+ AAC {SHARE_AUDIO_KBPS}k{' (the master is smaller: capped at its own bitrate)' if capped else ''}, "
             f"from the {src['kind']}"
             + (", verified (BT.709 / sRGB transfer / tv, frames, duration, audio, size)" if ok

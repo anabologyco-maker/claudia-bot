@@ -218,7 +218,7 @@ def test_jobs_done_and_fail_reach_the_production(tmp_path, monkeypatch):
     jobs = {j["job"]: j for j in r["jobs"]}
     assert jobs["J-0001"]["prompt"] == "her on a rooftop" and jobs["J-0001"]["aspect"] == "16:9"
     assert jobs["J-0002"]["expect"] == [str(env["wd"] / "song" / "take1.wav")]
-    assert r["grok_next"].startswith("Run job J-0001 with skill grok-imagine")
+    assert r["grok_next"].startswith("Claim job J-0001") and "then run it with skill grok-imagine" in r["grok_next"]
     assert "J-0002 to the person" in r["grok_next"]
     rc, out = K.run("relay", "done", "J-0001", "--file", "missing.png")
     assert rc == 1 and "no such file" in out["error"]

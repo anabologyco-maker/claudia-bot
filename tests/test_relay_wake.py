@@ -129,33 +129,20 @@ def test_whatever_the_person_copied_works(tmp_path, monkeypatch, hook):
         assert hook["got"][-1]["auth"] == f"Bearer {KEY}" and hook["got"][-1]["path"] == "/hooks/routine-abc123"
 
 
-def test_the_url_is_built_from_groks_link_to_the_routine(tmp_path, monkeypatch, hook):
-    """The person copies one thing, the key: the relay builds <backend>/automations/webhook/<id> the way the app does,
-    from Grok's own link to the routine (or the id), and asks for the POST to address only when that fails."""
+def test_only_the_routines_real_address_is_taken(tmp_path, monkeypatch, hook):
+    """A URL built from the routine's id was turned down (401) on a live bot: the relay takes only the POST to
+    address, and says so when given the routine's link."""
     RT.setup(tmp_path, monkeypatch)
     monkeypatch.setenv("CLAUDIA_WAKE_KEY", KEY)
-    monkeypatch.delenv("CLAUDIA_WAKE_BASE", raising=False)
     link = "grokbot://app/v1/agent?id=AGENT01&tab=routines&automation=auto_Abc123xyz&target=webhook-key"
     rc, out = K.run("relay", "wake", link)
-    assert rc == 0 and out["on"] and out["url"].startswith("https://api2.cursor.sh/...") and "built" in out["text"]
-    base = hook["url"].split("/hooks/")[0]
-    monkeypatch.setenv("CLAUDIA_WAKE_BASE", base)
-    for given in (link, "https://cursor.com/grok-bot/link/v1/agent?id=AGENT01&automation=auto_Abc123xyz",
-                  "auto_Abc123xyz"):
-        rc, out = K.run("relay", "wake", given)
-        assert rc == 0, (given, out)
-        rc, out = K.run("relay", "wake", "test")
-        assert rc == 0 and out["ok"], out
-        assert hook["got"][-1]["path"] == "/automations/webhook/auto_Abc123xyz"
-    monkeypatch.setenv("FAKE_HOOK_STATUS", "404")
-    rc, out = K.run("relay", "wake", "test")
     assert rc == 1 and "POST to address" in out["error"], out
-    monkeypatch.setenv("FAKE_HOOK_STATUS", "200")
-    rc, out = K.run("relay", "wake", f"POST to {hook['url']}")             # the address they pasted wins
-    assert rc == 0 and "built from" not in out["text"].splitlines()[0]
+    rc, out = K.run("relay", "wake", "https://cursor.com/grok-bot/link/v1/agent?id=A&automation=auto_Abc123xyz")
+    assert rc == 1 and "not its webhook address" in out["error"], out
+    rc, out = K.run("relay", "wake", f"POST to {hook['url']}")
+    assert rc == 0 and out["on"]
     rc, out = K.run("relay", "wake", "test")
     assert rc == 0 and hook["got"][-1]["path"] == "/hooks/routine-abc123"
-
 
 def test_wake_test_and_a_turned_down_key(tmp_path, monkeypatch, hook):
     RT.setup(tmp_path, monkeypatch)

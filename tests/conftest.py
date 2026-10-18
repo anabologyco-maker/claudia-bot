@@ -9,3 +9,5 @@ os.environ.setdefault("SLOP_GPU_LINK", "1")
 # model ids resolve to the newest of their family from OpenRouter's live list; the tests pin them (test_latest_models.py
 # turns resolution on with a fixture list)
 os.environ.setdefault("SLOP_PIN_MODELS", "1")
+# the relay supervisor's OpenRouter key watch stays off the network (tests/test_setup_036.py drives it directly)
+os.environ.setdefault("SLOP_KEY_WATCH", "0")

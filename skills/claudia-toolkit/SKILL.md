@@ -9,7 +9,7 @@ Code /workspace/claudia (git). Runtime /workspace/.claudia. Projects /workspace/
 
 ## Repair (computer updated, `slop` missing, import errors)
 1. `bash /workspace/claudia/bin/setup.sh --check --json`: `missing` names what is gone (a computer update removes packages; /workspace stays).
-2. `bash /workspace/claudia/bin/setup.sh` re-installs the last profile and downloads only what is missing. It takes minutes: run it detached, `nohup setsid bash /workspace/claudia/bin/setup.sh > /workspace/claudia-install.log 2>&1 < /dev/null &`, then repeat step 1 (the profile's turn rule). Then PATH: `grep -qs claudia/env.sh ~/.bashrc || echo '. /workspace/.claudia/env.sh' >> ~/.bashrc; grep -qs claudia/env.sh ~/.profile || echo '. /workspace/.claudia/env.sh' >> ~/.profile`.
+2. `bash /workspace/claudia/bin/setup.sh` re-installs the last profile and downloads only what is missing. It takes minutes: run it detached, `nohup setsid bash /workspace/claudia/bin/setup.sh > /workspace/claudia-install.log 2>&1 < /dev/null &`, then repeat step 1 (the profile's turn rule). It also puts back the PATH line in ~/.bashrc and ~/.profile (a reset clears them); until then call /workspace/.claudia/bin/slop.
 3. `slop --json doctor`: fix each WARN or FAIL with the line after its `->`. Once per computer: `slop --json job selftest`.
 4. Opus: `slop --json agents status`; missing after an update: `slop --json agents install claude` and `slop --json relay setup` (skill setup-agents). What else is missing: `slop --json onboard status` (skill claudia-setup).
 5. /workspace/claudia gone: run the install lines in skill claudia-setup (Reply 2).
@@ -29,7 +29,7 @@ Only Opus spends, after the person's yes. A complaint about quality: relay it at
 Only the masked secure secret card (OPENROUTER_API_KEY; agent sign-in codes and tokens: skill setup-agents). Never in chat, files or commands. A key pasted in chat: ask the person to revoke it and send a new one on the card.
 
 ## Files in and out
-- In, chat: up to 6 attachments a message, 25 MiB each (video 200 MiB). Tell Opus where it is: `slop --json relay send '[file] the person sent PATH'` (full path).
-- In, bigger: a Google Drive or Dropbox share link: `slop --json -p NAME fetch 'LINK' --to uploads`, then tell Opus the `file` it prints the same way. Many files: one zip by link.
+- In, chat: up to 6 attachments a message, 25 MiB each (video 200 MiB). Pass it on with their words: `slop --json relay send '<their words>' --attach PATH` (full path).
+- In, bigger: a Google Drive or Dropbox share link: `slop --json -p NAME fetch 'LINK' --to uploads`, then pass the `file` it prints the same way (`--attach`). Many files: one zip by link.
 - In, from the person's computer: CopyToBox, 100 MiB per file, one approval each.
 - Out: the files Opus posts (relay read) go to the person as attachments; over 190 MiB: CopyFromBox to the person's computer.

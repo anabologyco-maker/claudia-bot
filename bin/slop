@@ -34,12 +34,21 @@ if [ -x "$PY" ]; then
   exec "$PY" -m slop "$@"
 fi
 
+# no venv: setup never ran here, or a computer update or reset removed it (env.sh in /workspace survives)
+if [ -f "$SLOP_HOME/env.sh" ]; then
+  why="the toolkit's Python is gone ($PY: a computer update or reset removes it) - reinstall it in the background (minutes): nohup setsid bash $REPO/bin/setup.sh > $(dirname "$SLOP_HOME")/claudia-install.log 2>&1 < /dev/null &   then check: bash $REPO/bin/setup.sh --check --json"
+else
+  why="$PY not found - run: bash $REPO/bin/setup.sh"
+fi
 for c in python3.13 python3.12 python3.11 python3; do
   if command -v "$c" >/dev/null 2>&1 &&
      "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
-    echo "slop: $PY not found - run: bash $REPO/bin/setup.sh   (using $c for now)" >&2
+    echo "slop: $why   (using $c for now)" >&2
     exec "$c" -m slop "$@"
   fi
 done
-echo "slop: no Python 3.11+ found. Run: bash $REPO/bin/setup.sh (it installs Python 3.13 under $SLOP_HOME)" >&2
+case " $* " in
+  *" --json "*) printf '{"ok": false, "error": "%s"}\n' "no Python 3.11+ here: $why" ;;
+  *) echo "slop: no Python 3.11+ found. $why (it installs Python 3.13 under $SLOP_HOME)" >&2 ;;
+esac
 exit 127

@@ -149,7 +149,7 @@ def test_smoke_the_skill_order_on_the_chatgpt_plan(tmp_path, monkeypatch):
     rc, out = K.run("-p", "demo", "gen", "image", "--jobs", "--missing", "--yes")
     assert rc == 0 and len(out["made"]) == sum(need.values()), out
     new = execs(env)[n:]
-    picked = next((proj / "plates/cands/lead-cu").glob("1.*")).resolve()
+    picked = next(p for p in (proj / "plates/cands/lead-cu").glob("1.*") if p.suffix != ".json").resolve()
     assert [attached(c) for c in new if attached(c)] == [[str(picked)]] * need["lead-ms"]
     assert sum(1 for c in new if not attached(c)) == need["hall-ws"]
     side = json.loads(next((proj / "plates/cands/lead-ms").glob("*.json")).read_text())

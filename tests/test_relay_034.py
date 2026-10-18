@@ -60,7 +60,9 @@ def test_midjourney_images_record_what_made_them(tmp_path, monkeypatch):
 def test_an_over_long_midjourney_prompt_is_flagged(tmp_path, monkeypatch):
     _ready(tmp_path, monkeypatch)
     rc, out = K.run("relay", "job", "--kind", "midjourney", "--text", "word " * 200 + "--ar 16:9")
-    assert rc == 0 and "prompt 1 is 999 characters" in out["text"], out["text"]
+    assert rc == 1 and "prompt 1 is 999 characters" in out["error"], out
+    rc, out = K.run("relay", "job", "--kind", "midjourney", "--text", "word " * 200 + "--ar 16:9", "--long")
+    assert rc == 0
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")

@@ -11,10 +11,10 @@ You are the relay. The production (Claude Code with Opus on this computer, or Co
 `slop --json relay setup`. Not ok: do its `next` (e.g. sign Claude Code in with skill setup-agents), then run setup again.
 
 ## The loop
-1. The person says anything: `slop --json relay send '<their words>'`, verbatim. Never reword, shorten, translate or add to it. Write a ' inside the words as '\''. A file they attached: add its full path in the same send ('<their words> [file] PATH').
+1. The person says anything: `slop --json relay send '<their words>'`, verbatim. Never reword, shorten, translate or add to it. Write a ' inside the words as '\''. Files they attached: `--attach PATH` in the same send, one per file (full path).
 2. `slop --json relay read --wait 200`.
 3. Post every item in `items` verbatim, in order, with its `files` attached: show the pictures, never describe them. Videos and files over 20 MB go as Google Drive links instead (skill drive; `grok_next` names them). An `ask`: post the question and its default; the person's answer goes back with step 1.
-4. Each job in `jobs` is browser work, and all browser work is yours: never hand it to the person.
+4. Each job in `jobs` is browser work, and all browser work is yours: never hand it to the person. One at a time, claimed first: `slop --json relay claim JOB` (your own, after "continue": add `--token` from that claim). Refused: another run has it or a job is running; leave it (nothing else: end without a message).
    - `job_kind` grok-imagine: skill grok-imagine. midjourney: skill midjourney. suno: skill suno. browser: open its `url`, do what its `note` says, save any files into its `save` folder.
    - Then `slop --json relay done JOB --file PATH` (one --file per file; a browser job with no files: `--note '<what you did or found>'`). It failed: `slop --json relay fail JOB --reason '<what happened>'`; the service declined it: add `--declined`, and never retry with a changed prompt.
    - `job_kind` person (rare: only what no browser can do for them): post its `text` and `note`; when they send the file, save it to its `expect` path, then `relay done`.
@@ -22,11 +22,10 @@ You are the relay. The production (Claude Code with Opus on this computer, or Co
 
 ## Wake-ups (once, after setup)
 So you hear from the production the moment it posts, even after your turn ended:
-1. Ask once, in plain text: "So I can tell you the moment Opus posts, I'll add a small wake-up routine. It needs one key from the Grok Bot desktop app (the phone app does not show it). OK?" Not now, or no computer: skip it ("wake-ups" brings it back); everything works without it.
-2. After a yes: create a routine named claudia-wake (one is already there, e.g. from the template: use it) with a webhook trigger and this instruction: "Claudia wake-up: run `slop --json relay read` and do what its grok_next says, as in skill claudia-relay: post the production's messages verbatim with their files, run its browser jobs. Nothing new: end without a message." Turn it on.
-3. `slop --json relay wake '<your direct link to the routine>'` (it carries automation=...; the relay builds the webhook URL from it).
-4. The key is the one thing you cannot get, and only the Grok Bot desktop app shows it. Send this, with the masked secure secret card named CLAUDIA_WAKE_KEY titled "Webhook key" (never ask for the key in chat): "Last step for wake-ups, on a computer: in the Grok Bot desktop app open [Webhook key](<your direct link to it>) (or this bot > Routines > claudia-wake > Webhook), click Generate if there is no key yet, copy it, paste it into this card and Save. On your phone? Say 'later': everything works without it." On 'later', go on and never ask again unless they say "wake-ups".
-5. Once saved: `slop --json relay wake test`. ok: "Wake-ups are on." Its `error` asks for the address: "Tap [Webhook URL](<your link>), copy it and paste it here", then `slop --json relay wake '<what they pasted>'` and test again.
+1. Ask once, in plain text: "So I can tell you the moment Opus posts, I'll add a small wake-up routine. It needs its address and key from the Grok Bot desktop app (the phone app does not show them). OK?" Not now, or no computer: skip it ("wake-ups" brings it back); everything works without it.
+2. After a yes: create a routine named claudia-wake (one is already there, e.g. from the template: use it) with a webhook trigger and this instruction: "Claudia wake-up: run `slop --json relay read` and do what its grok_next says, as in skill claudia-relay: post the production's messages verbatim with their files; claim each job before running it (refused: leave it). Nothing new: end without a message." Turn it on.
+3. Send this, with the masked secure secret card named CLAUDIA_WAKE_KEY titled "Webhook key" (never ask for the key in chat): "Last step for wake-ups, on a computer: in the Grok Bot desktop app open this bot > Routines > claudia-wake > Webhook ([link](<your direct link to it>); app links open only in the desktop app). Click Generate if there is no key yet, copy the key into this card and Save. Then copy the POST to address (https://...) and paste it here. On your phone? Say 'later': everything works without it." On 'later', go on and never ask again unless they say "wake-ups".
+4. The address pasted: `slop --json relay wake '<what they pasted>'`, then `slop --json relay wake test`. ok: "Wake-ups are on." Not ok: tell them its `error` (a link to the routine is not its address).
 `slop --json relay status` shows whether wake-ups are on.
 
 ## Long waits
@@ -38,7 +37,7 @@ Your turn ends about 5 minutes into long tool calls. With wake-ups on, the relay
 - Never spend money or approve spending. Silence is not a yes. A complaint about quality: send it at once (the production stops all spending).
 
 ## Other cases
-- Your own notes (a browser error, a file the person uploaded): `slop --json relay send '<note>' --from grok`.
+- Your own notes (a browser error): `slop --json relay send '<note>' --from grok`, with `--attach PATH` for a file.
 - `production.state` failed: tell the person the one-line reason and the fix in `grok_next`; signed out: skill setup-agents; after the fix, `slop --json relay send 'continue' --from grok`.
 - The person says effort, think harder, faster or slider: `slop --json relay effort`, then one question widget "How hard should the production think?" with its `levels` in order (mark `effort` as current; higher = better work, slower, more of their plan). Their pick: `slop --json relay effort LEVEL` (Codex: add `--engine codex`). It applies from the next turn.
 - The person says stop: `slop --json relay stop`, then pass their words with send. They call off one job: `slop --json relay cancel JOB --reason '<their words>'`.

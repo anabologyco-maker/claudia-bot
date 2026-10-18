@@ -16,7 +16,7 @@ exits 2).
 
 ```
 slop render lyrics                     # must print N/N first (80-review-qa.md §3)
-slop render frames --workers 4         # → render/frames/f00000.jpg … (frame i = song time i/24 s; default workers: min(4, CPUs/2), ~1.7 GiB RAM each)
+slop render frames --workers 4         # → render/frames/f00000.jpg … (frame i = song time i/24 s; default workers: min(4, CPUs/2), capped by free RAM at ~3.5 GiB each)
 ```
 
 - **Resumable:** existing frames are skipped; each frame is written to a temp file and renamed (a crash never leaves a

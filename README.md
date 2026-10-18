@@ -323,15 +323,17 @@ or after the command name; the documented form is `slop --json --project NAME <c
 
 | Command | What it does |
 |---|---|
-| `slop relay setup [--engine ENGINE] [--model MODEL] [--no-skill] [--force]` | check the engine is signed in, register the claudia.gallery MCP, install the Claudia skill, write the production brief (CLAUDE.md, AGENTS.md in the projects folder) |
-| `slop relay send [TEXT] [--file FILE] [--from director\|grok]` | pass words to the production verbatim; starts a turn when it is idle (returns in seconds) |
+| `slop relay setup [--engine ENGINE] [--model MODEL] [--no-skill] [--force]` | check the engine is signed in, register the claudia.gallery MCP and the production's audio tools (earshot; ElevenLabs with its key), install the Claudia skill, write the production brief (CLAUDE.md, AGENTS.md in the projects folder) |
+| `slop relay send [TEXT] [--file FILE] [--attach PATH] [--from director\|grok]` | pass words to the production verbatim; starts a turn when it is idle (returns in seconds) |
 | `slop relay read [--wait S] [--all]` | what Grok shows next: new messages with their files, open jobs, the production's state, grok_next |
 | `slop relay done JOB [--file FILE] [--note NOTE] [--model MODEL]` | (Grok) a job's files are saved: mark it done and tell the production |
+| `slop relay copy JOB [--k K] [--field FIELD]` | (Grok) put a job's prompt on the clipboard to paste (never type a prompt by hand) |
+| `slop relay claim JOB [--stale-ok] [--token TOKEN]` | (Grok) take a job before running it: one browser job at a time, never one another run took |
 | `slop relay cancel JOB [--reason REASON]` | close a job no one needs any more (cancelled, not failed): the production's own, or Grok's when the person says so |
 | `slop relay fail JOB --reason REASON [--declined]` | (Grok) a job could not be done: mark it failed (--declined: the service refused it) |
 | `slop relay say TEXT [--show FILE] [--as-is]` | (the production) post a message for the director, with files to show |
 | `slop relay ask TEXT [--default DEFAULT] [--show FILE] [--as-is]` | (the production) ask the director one question, with its default |
-| `slop relay job --kind grok-imagine\|midjourney\|suno\|browser\|person [--what WHAT] [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--image IMAGE] [--aspect 16:9\|9:16\|1:1\|2:3\|3:2] [--seconds SECONDS] [--save SAVE] [--name NAME] [--note NOTE] [--text TEXT] [--title TITLE] [--style STYLE] [--lyrics LYRICS] [--lyrics-file LYRICS_FILE] [--exclude EXCLUDE] [--instrumental] [--url URL] [--plate PLATE] [--personalize on\|off] [--expect EXPECT]` | (the production) ask Grok for browser work, all of it in Grok's own signed-in browser (--kind grok-imagine \| midjourney \| suno \| browser); --kind person only for what only a person can do |
+| `slop relay job --kind grok-imagine\|midjourney\|suno\|browser\|person [--what WHAT] [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--image IMAGE] [--aspect 16:9\|9:16\|1:1\|2:3\|3:2] [--seconds SECONDS] [--save SAVE] [--name NAME] [--note NOTE] [--text TEXT] [--title TITLE] [--style STYLE] [--lyrics LYRICS] [--lyrics-file LYRICS_FILE] [--exclude EXCLUDE] [--instrumental] [--url URL] [--plate PLATE] [--long] [--personalize on\|off] [--expect EXPECT]` | (the production) ask Grok for browser work, all of it in Grok's own signed-in browser (--kind grok-imagine \| midjourney \| suno \| browser); --kind person only for what only a person can do |
 | `slop relay inbox` | (the production) new messages from the director and Grok, marked read |
 | `slop relay status` | the production's state, engine, session, message counts and open jobs |
 | `slop relay wake [URL]` | the wake-up routine: Grok's webhook, called when the production posts while Grok is not waiting (a URL turns it on; off; test); its key: $CLAUDIA_WAKE_KEY |
