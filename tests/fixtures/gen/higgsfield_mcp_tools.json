@@ -1,18 +1,19 @@
 {
- "_source": "Request side of the Higgsfield connector's tool definitions as served to the agent on 2026-10-01 (the bot runs these; the CLI writes the request file). Names, required keys and limits copied from the live schemas; descriptions shortened.",
+ "_source": "Request side of the Higgsfield connector's tool definitions as served to the agent on 2026-10-01 (the bot runs these; the CLI writes the request file). Names, required keys and limits copied from the live schemas; descriptions shortened. Pricing re-checked 2026-11-20: generate_video no longer takes get_cost; estimate_video_cost / estimate_image_cost / estimate_audio_cost price a request with the generate tool's own params.",
  "generate_video": {
   "required": ["params"],
   "params": {
    "required": ["model"],
-   "properties": ["aspect_ratio", "count", "declined_preset_id", "duration", "folder_id", "get_cost", "medias", "model",
+   "properties": ["aspect_ratio", "count", "declined_preset_id", "duration", "folder_id", "medias", "model",
                   "preset_id", "prompt", "use_unlim"],
    "additional_properties": true,
    "count": {"minimum": 1, "maximum": 4, "default": 1},
-   "get_cost": "If true, return the cost in credits for this generation without submitting any job.",
    "use_unlim": "OMIT IT to let the server decide - if the caller holds an allowance the tool submits nothing and returns `unlim_choice`, the question to put to the user; answer by calling again with the same params plus this field.",
    "medias_item": {"required": ["value", "role"],
                    "value": "UUID from media_upload/media_import_url or job_id from a prior generation. Do not pass https:// URLs here."}
-  }
+  },
+  "pricing": "Price a request with estimate_video_cost; get_cost is not accepted here.",
+  "transport_timeout": "On a transport timeout the submission outcome may be unknown: do not automatically resubmit. Reuse returned job IDs and retry only after the original outcome is known."
  },
  "generate_video_batch": {
   "required": ["requests"],
@@ -20,6 +21,27 @@
   "requests_item": {"required": ["index", "params"], "additional_properties": false},
   "params": {"required": ["model"], "count": {"const": 1}, "get_cost": "not allowed inside a batch",
              "additional_properties": true}
+ },
+ "estimate_video_cost": {
+  "required": ["params"],
+  "params": {"same_as": "generate_video", "required": ["model"], "additional_properties": true,
+             "duration": "may be omitted (the model default applies)", "get_cost": "accepted and changes nothing",
+             "medias_item": {"value": "uploaded media IDs or completed job IDs, not raw URLs"}},
+  "submits": "nothing (no job, no widget); Higgsfield presets cannot be quoted; a quote does not validate that the request is ready to generate"
+ },
+ "estimate_image_cost": {
+  "required": ["params"],
+  "params": {"same_as": "generate_image", "required": ["model"], "additional_properties": true,
+             "prompt": "may be omitted", "get_cost": "accepted and changes nothing",
+             "medias_item": {"value": "uploaded media IDs or completed job IDs, not raw URLs"}},
+  "submits": "nothing (no job, no widget); a quote does not validate that the request is ready to generate"
+ },
+ "estimate_audio_cost": {
+  "required": ["params"],
+  "params": {"same_as": "generate_audio", "required": ["model", "prompt"], "additional_properties": true,
+             "get_cost": "accepted and changes nothing",
+             "medias_item": {"value": "uploaded media IDs or completed job IDs, not raw URLs"}},
+  "submits": "nothing (no job, no widget); a quote does not validate that the request is ready to generate"
  },
  "jobs_wait": {
   "required": ["jobs"],

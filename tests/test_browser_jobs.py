@@ -1,6 +1,7 @@
-"""Every browser task is Grok's: the production asks with `slop relay job --kind midjourney|suno|browser|grok-imagine`,
-Grok runs it in its own signed-in browser (skills midjourney, suno, grok-imagine) and the person only decides. The brief,
-the profile, the relay skill and the stage guides all say so; nothing tells the person to paste, create or download."""
+"""Every job is Grok's: the production asks with `slop relay job --kind midjourney|suno|browser|grok-imagine`, Grok
+runs it (Grok Imagine on its own tool, Suno through Suno's connector, Midjourney and other sites in its signed-in
+browser; skills grok-imagine, suno, midjourney) and the person only decides. The brief, the profile, the relay skill and
+the stage guides all say so; nothing tells the person to paste, create or download."""
 from __future__ import annotations
 
 import importlib.util
@@ -61,15 +62,15 @@ def test_the_relay_refuses_incomplete_browser_jobs(tmp_path, monkeypatch):
 
 def test_everyone_knows_browser_work_is_groks():
     brief = read(ROOT / "templates" / "production-brief.md")
-    assert "Every browser task is Grok's" in brief and "--kind midjourney" in brief and "--kind suno" in brief
+    assert "Every job is Grok's" in brief and "--kind midjourney" in brief and "--kind suno" in brief
     assert "Never ask the person to paste, press Create, download" in brief
     assert "person steps" not in brief and "pastes, presses Create" not in brief
     prof = read(SKILLS / "profile.md")
-    assert "Every browser task is yours" in prof and "midjourney, suno" in prof
+    assert "Every job is yours" in prof and "midjourney, suno" in prof and "Suno: its connector" in prof
     relay = read(SKILLS / "claudia-relay" / "SKILL.md")
-    assert "all browser work is yours: never hand it to the person" in relay
+    assert "Each job in `jobs` is yours, never the person's." in relay
     for s in ("midjourney", "suno"):
-        assert s in BR.ORDER and "I never type passwords" in read(SKILLS / s / "SKILL.md")
+        assert s in BR.ORDER and "never type a password" in read(SKILLS / s / "SKILL.md").lower()
     for f in [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md")), SKILLS / "song" / "SKILL.md",
               SKILLS / "plates" / "SKILL.md"]:
         text = read(f)

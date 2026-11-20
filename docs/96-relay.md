@@ -52,11 +52,15 @@ There is one relay per computer. Grok never names a project: the production work
 3. The production talks back only through the relay:
    - `slop relay say TEXT --show FILE ...` and `slop relay ask QUESTION --default X --show FILE ...` (files are
      checked and stored as absolute paths);
-   - `slop relay job --kind grok-imagine --what still|clip --prompt TEXT ...`: browser work for Grok on grok.com
-     (the person's X plan, $0; stills and motion clips, never sung lip-sync windows);
-   - `slop relay job --kind midjourney --text PROMPT [--plate KEY] ...`, `--kind suno --title --style
-     --lyrics-file ...` and `--kind browser --url URL --note TEXT`: every other browser task, all in Grok's own
-     signed-in browser (skills midjourney and suno);
+   - `slop relay job --kind grok-imagine --what still|clip --prompt TEXT [--image F] [--end-image F] [--ref F ...]
+     [--aspect A] [--seconds N] [--res 1080p]`: Grok makes it with its own Grok Imagine tool, no browser (the bot's
+     Grok Bot usage, $0 extra; stills and motion clips up to 720p, never sung lip-sync windows); `--res 1080p` runs
+     on grok.com in Grok's browser, on the person's X plan. The relay refuses what the tool cannot make (a still in
+     3:2, a clip over 15 s, more than 14 references, a GIF) before anything is posted;
+   - `slop relay job --kind suno --title --style --lyrics-file ...`: Grok makes it through Suno's own connector
+     (Suno's MCP, signed in once on its card; Grok's browser only while it is not set up) and saves both takes;
+   - `slop relay job --kind midjourney --text PROMPT [--plate KEY] ...` and `--kind browser --url URL --note TEXT`:
+     Midjourney and any other site, in Grok's own signed-in browser (skill midjourney);
    - `slop relay job --kind person --text BLOCK --expect FILE`: only what no browser can do for the person;
    - `slop relay inbox`: messages that arrived during the turn.
 4. `slop --json relay read --wait 200`: new say/ask items verbatim with their files (marked read; videos and files
@@ -66,14 +70,16 @@ There is one relay per computer. Grok never names a project: the production work
    --wait 200`." The wait is capped at 240 s and returns early on anything new; it returns at once when nothing
    is working or a job is open.
 5. Grok claims a job before it runs it: `slop --json relay claim J-0003`. A claim is refused when another run of
-   Grok holds that job, when another job is being run (one browser job at a time), and when the job is over 6 hours
+   Grok holds that job, when another job is being run (one job at a time), and when the job is over 6 hours
    old: Grok then asks the production whether it is still wanted (`relay send ... --from grok`) and runs it only
    after a yes, with `--stale-ok`. A claim lapses after 45 min, so a run that died frees the job. Two runs of Grok
    (a wake-up next to a chat) therefore never make the same song twice or fight over the browser.
 6. Grok saves a job's downloads into the job's `save` folder, then `slop --json relay done J-0003 --file PATH`
    (or `relay fail J-0003 --reason TEXT [--declined]`). That is a message to the production, and it starts a turn
    when the production is idle. Midjourney and Grok Imagine downloads saved without their extension get it from
-   their bytes, and every Midjourney PNG carries its prompt, job, plate and model as PNG text.
+   their bytes (Suno takes too: WAV, MP3, M4A, FLAC or Ogg), and every Midjourney PNG carries its prompt, job, plate
+   and model as PNG text. A Grok Imagine clip below the job's resolution (480p where 720p was asked) is flagged to
+   Grok and to the production.
 7. Prompts are pasted, never typed (typing breaks accented words): `slop --json relay copy J-0003 [--k N]
    [--field lyrics|style|title|exclude|prompt]` puts the text on the clipboard (xclip, xsel or wl-copy), or, with
    no clipboard tool, into clipboard.txt for Grok to open in a tab and copy.

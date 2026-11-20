@@ -36,7 +36,7 @@ def test_setup_install_is_detached_and_the_clone_never_prompts():
 def test_setup_never_dead_ends():
     setup = read("claudia-setup/SKILL.md")
     assert "can come later" in setup and '("setup" brings this back)' in setup, "every account can wait"
-    assert "No X plan: say Opus will use the other routes; go on." in setup
+    assert "Grok Imagine is your own tool: nothing to sign in." in setup, "no X plan needed for Grok Imagine"
     assert "still failing: go on" in setup, "a gallery outage never blocks the setup"
     assert setup.rstrip().endswith("Their next message: skill claudia-relay.")
 

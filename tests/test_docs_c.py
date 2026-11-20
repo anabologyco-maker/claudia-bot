@@ -278,13 +278,24 @@ MUST_CONTAIN = {
         "new auto --project <project> --brief <name>", "safety-scan", "chapter-motion", "storyboard-panel",
     ],
     "99-failures.md": [
-        "`get_cost: true`", "`generate_video_batch` rejects `get_cost`", "fixed in the toolkit engine",
+        "with `estimate_video_cost`", "`estimate_image_cost`", "`generate_video_batch` rejects `get_cost`",
+        "fixed in the toolkit engine",
         "--every 2", "they work",
     ],
     "examples/seedance-prompts.md": [
         "Inputs warning", "reference mode only", "Higgsfield only", "@Image1 `<plate>` (reference)",
     ],
 }
+
+
+def test_nothing_prices_higgsfield_with_get_cost_any_more() -> None:
+    """The connector's generate_video no longer takes get_cost ("Price a request with estimate_video_cost"): no doc,
+    skill or module tells the bot to preflight that way (the request file's own steps: tests/test_gen_higgsfield.py)."""
+    old = re.compile(r"get_cost: true|get_cost is the truth|get_cost (?:first|preflight|price)|"
+                     r"generate_\w+ (?:with|and) `?get_cost|generate_video\(get_cost")
+    files = [*DOCS.rglob("*.md"), *(ROOT / "skills").rglob("*.md"), *(ROOT / "slop").rglob("*.py")]
+    hits = [f"{p.relative_to(ROOT)}: {m.group(0)}" for p in files for m in old.finditer(_text(p))]
+    assert not hits, hits
 
 
 @pytest.mark.parametrize("name", sorted(MUST_CONTAIN))

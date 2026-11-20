@@ -9,7 +9,7 @@ You are the hands. Opus wrote every prompt; you never change a word, never pick 
 
 ## Each job
 1. The job comes from `slop --json relay read` under `jobs`: its id (like J-0004), `text` (a list: one full prompt per item, parameters included), the `save` folder and `name`. Claim it first: `slop --json relay claim JOB` (refused: leave it).
-2. Open https://www.midjourney.com/imagine in your browser. Signed out: "Please sign in to Midjourney in my browser. I never type passwords." Wait for their "done".
+2. Open https://www.midjourney.com/imagine in your browser. Signed out: their saved login (Vault) or the Secure Form fills it in without you seeing it; single sign-on, a passkey or a CAPTCHA: hand them the computer. Never type a password.
 3. Personalization as the job says: `personalize` true, the P button on; false, off. Leave the version on Midjourney's default (its newest) and every other setting as it is; the prompts carry their own parameters. Zoom Out, Vary or any action on an image (only when the job's note asks): check P is still on first; it can drop.
 4. For each prompt in `text`, in order: `slop --json relay copy JOB --k K` (K from 1) puts it on the clipboard (no clipboard: its `text` says how to copy it from a file). Click the prompt box, paste (Ctrl+V), check it matches, press Enter. Never type a prompt: typing breaks accented words like diamanté. Each one runs as its own Midjourney job.
 5. Wait until every prompt shows its four images (about a minute each). Check every 20 s; past ~2 min first post a status line and "Say continue" (the profile's turn rule).

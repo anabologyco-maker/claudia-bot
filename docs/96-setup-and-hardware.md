@@ -31,9 +31,11 @@ input that stores a secret as an environment variable on the box.
    it runs the two installs detached, so no shell call times out.
 3. **Keys** through the secure secret card: `OPENROUTER_API_KEY` (with its own credit limit), optional `ARENA_TOKEN`
    and `ELEVENLABS_API_KEY` (the production's ElevenLabs tools; `slop relay setup` turns them on).
-4. **Connectors** the bot sees: Higgsfield (sung clips on the user's credits), optional Google Drive.
-5. **Music and stills plans**: Suno plan and Midjourney plan and personal profile code (never published); the user
-   signs in to each once in Grok's browser, and from then on Grok runs them.
+4. **Connectors** the bot sees: Suno's own MCP (`suno-mcp`, the user signs in to Suno on its card), Higgsfield (sung
+   clips on the user's credits), optional Google Drive.
+5. **Music and stills plans**: the Suno plan and the Midjourney plan (personalization is the P button, never a code);
+   the user signs in to Midjourney once in Grok's browser (to Suno too only while its connector is not open to them),
+   and from then on Grok runs them.
 6. **Coding-agent plans** (asked in every tier): Claude, ChatGPT (Codex), Meta (Muse Code), Google (Gemini), none.
    Each plan the user has becomes a recommended item: install and sign in that agent on the box.
 7. **Home GPU** (asked in every tier): paired, direct or none.

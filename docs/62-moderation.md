@@ -42,7 +42,7 @@ Read with: `60-clips.md` (providers), `50-plates-midjourney.md` and `51-plates-a
 | **Higgsfield — silent input filter** | status `failed`, no reason; credits come back a few seconds to a few minutes later; an identical resubmit fails again | refunded | Reword (§4). If the image is the trigger: the plate's next candidate, or pass the image as `image_references` instead of `start_image`. |
 | **Higgsfield — output flag** | status `nsfw` | refunded | The *output* was flagged: change the staging in the prompt, not the image. |
 | **Higgsfield — preset recommendation** | a batch item refused: "Preset … was recommended instead of submitting a job" | free | Resubmit only that item with `declined_preset_id` set to that preset. Not a safety block. |
-| **Higgsfield — unlimited choice** | `unlim_choice` returned, nothing submitted | free | Resend with `use_unlim: false` unless the owner asks to spend their unlimited allowance. |
+| **Higgsfield — unlimited choice** | `unlim_choice` returned, nothing submitted | free | Ask the owner (their free allowance or their credits), then resend the same params with `use_unlim` set to their answer. Never pick for them. |
 | **Midjourney moderation** | a job is blocked with a notice, or is missing after a paste | — | Ask the owner for a screenshot of the notice; reword plainly; resend only that line. |
 | **OpenAI image models** | `moderation_blocked` | not billed | Reword. |
 | **Grok Bot `GenerateImage`** | content-safety block / `model_restricted` | — | Reword; it makes original visuals only (no real people or brands). |
@@ -85,7 +85,8 @@ When a clip's reference is declined on OpenRouter:
    provider already declined).
 3. Route the clip to **Higgsfield** with the same image (same plate file, same audio, same prompt; the request writer
    applies Higgsfield's `@Image` numbering, `60-clips.md` §2.3): `slop clip set W02 --provider higgsfield`,
-   `slop clip lock W02`, then `slop clip submit W02 --yes` writes the request file for the bot. Preflight the credits.
+   `slop clip lock W02`, then `slop clip submit W02 --yes` writes the request file for the bot. Preflight the credits
+   (`estimate_video_cost`).
 4. If Higgsfield also blocks it: if the image went as a `start_image`, send it as `image_references` (§2.1; the audio
    reference stays). Then try the plate's **next Midjourney candidate** (`slop clip set W02 --start
    plates/cands/<plate>/<k>.jpg`); then reword the prompt (§4) if the words might be the trigger. Never move a sung clip

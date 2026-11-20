@@ -1,7 +1,8 @@
 """Fixes track (critic P1/P2 + phase-2 UX), gen side, offline: every gen hint line names the project (-p), the start
 image goes on the tunnel for Higgsfield media_import_url (`gen host --role start --tunnel`, refreshing an open request
 file), `clip submit` hosts the window / start itself while the tunnel runs, `clip submit --finalize-from TAKE` writes a
-draft_job_id finalize request (get_cost first) and requires `clip sync` after, and a partial sync says PARTIAL."""
+draft_job_id finalize request (estimate_video_cost first) and requires `clip sync` after, and a partial sync says
+PARTIAL."""
 from __future__ import annotations
 
 import contextlib
@@ -175,7 +176,7 @@ def test_without_a_tunnel_the_request_says_how_to_upload_and_gen_host_switches_i
     req = json.loads(p.read_text(encoding="utf-8"))
     assert rc == 0 and [u["hosted_key"] for u in req["uploads"]] == ["audio"]
     assert any(m["value"] == mid for m in req["request"]["params"]["medias"])
-    assert any(m["value"] == mid for m in req["get_cost"]["params"]["medias"])
+    assert any(m["value"] == mid for m in req["estimate"]["params"]["medias"])   # the price check prices the same
     assert names == ["demo__W01__start.png"]
 
 
@@ -235,7 +236,9 @@ def test_finalize_a_kept_draft_then_sync_is_required(env, tmp_path, monkeypatch)
     req = json.loads((env / "clips/W01/higgsfield-take-2-finalize-of-1.json").read_text(encoding="utf-8"))
     prm = req["request"]["params"]
     assert prm["draft_job_id"] == DRAFT_JOB and prm["resolution"] == "1080p" and prm["mode"] == "omni_reference"
-    assert "draft" not in prm and "medias" not in prm and req["get_cost"]["params"]["get_cost"] is True
+    assert "draft" not in prm and "medias" not in prm and "get_cost" not in req
+    assert req["estimate"] == {"tool": "estimate_video_cost", "params": prm}
+    assert req["how_to_run"][0].startswith("PREFLIGHT (free): estimate_video_cost {params: <request.params, unchanged>}")
     assert prm["prompt"] == c["takes"][0]["body"]["prompt"]                   # the draft's prompt, verbatim
     assert any(s.startswith("REQUIRED after the ingest: slop -p demo clip sync W01") for s in req["how_to_run"])
     row = ledger.rows(env)[-1]

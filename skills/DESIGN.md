@@ -100,7 +100,7 @@
     (timestamps on real word/hit times) for motion clips and the board; sung plates keep the mouth clear (no microphone,
     hand or hair) → owner reads book →
     `slop clip lock/submit` (OpenRouter Seedance; audio window hosted via `slop gen tunnel start` + `slop gen host CLIP --tunnel`, or a Higgsfield media URL with `slop gen host CLIP --url URL`) or
-    Higgsfield MCP path (request JSON → generate_video with get_cost preflight → jobs_wait polling ≤15 s → ingest) →
+    Higgsfield MCP path (request JSON → estimate_video_cost preflight → generate_video_batch → jobs_wait polling ≤15 s → ingest) →
     `slop clip sync` → covers → coverage. Moderation rules (never alter a declined image). The tunnel is checked with
     `gen tunnel status --verify` in a later call before any paid submit or media_import_url; Higgsfield uploads go by
     `gen host CLIP --role start|audio --tunnel` + media_import_url (media_upload + PUT with If-None-Match only as the

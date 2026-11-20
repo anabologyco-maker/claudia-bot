@@ -34,7 +34,7 @@ between them · **[ops]** the owner's agent-swarm runs · **[tk]** found while b
 | B5 | Lyric rushes or truncates silently [EV] | lyrics field over ~3,000 characters | aim 1,800–2,400 characters for ~2:20; one breath per line | 10-song |
 | B6 | Can't fetch the chosen take [EV][SP] | the download is a native browser download; the CDN needs signed URLs | the user downloads it (their download is also the licensing step) and gives the file | 10-song |
 | B7 | Automation stuck on "Verify you are human" [SP] | a Cloudflare check in an iframe on the first Create | Grok stops at any captcha or "Verify you are human" and hands its browser to the owner for that one click; it never solves one | 10-song |
-| B8 | Browser tab gone mid-task [SP] | Suno tabs close after 30 idle minutes | the bot no longer drives Suno tabs: the owner generates and downloads | 10-song |
+| B8 | Browser tab gone mid-task [SP] | Suno tabs close after 30 idle minutes | Grok makes songs through Suno's own connector (no tab); in the browser fallback it reopens the page and checks the library before creating again | 10-song |
 | B9 | "A voice already exists for this song" [SP] | Suno allows one Voice per source song | make one combined (spoken + sung) Voice | 10-song |
 | B10 | The new take changed the song's shape (no instrumental where there was one) [SP] | takes differ in structure, not just timing | re-time the board from word anchors, then restructure by hand where the shape changed | 40-storyboard |
 | B11 | A patched export drifted the whole song by up to 0.7 s [SP] | Suno editor export with **BPM lock on** | export with the lock **off**; spectrogram-diff old vs new; time-map instead of re-cutting | 90-master-publish §3.1 |
@@ -116,7 +116,7 @@ between them · **[ops]** the owner's agent-swarm runs · **[tk]** found while b
 | F8 | A text filter refused "tied, screaming" [SP] | trigger words | reword without changing the beat | 62 |
 | F9 | A filter that passed faces "2 days ago" now declines them [SP] | provider behaviour changes | keep a second provider configured | 62 |
 | F10 | The agent's context floods during uploads [SP] | MCP presigned-upload replies ~3.5k characters per file | upload by URL (host the file, import by URL) | 60-clips |
-| F11 | Spending without knowing the price (prices change; a rate table can be stale) [SP][tk] | skipping the free cost preflight; `get_cost` is not a separate tool, so it is easy to miss | preflight every new configuration with `generate_video` and `get_cost: true` (free, submits nothing); `generate_video_batch` rejects `get_cost`, so preflight one request per new configuration with `generate_video` first, then batch | 60-clips §6.2, 62-moderation |
+| F11 | Spending without knowing the price (prices change; a rate table can be stale) [SP][tk] | skipping the free cost preflight (it was a `get_cost` flag on `generate_video`, easy to miss; the connector moved it to its own tools and `generate_video` no longer takes the flag) | preflight every new configuration with `estimate_video_cost` (stills: `estimate_image_cost`; audio: `estimate_audio_cost`): the generate tool's own `params`, free, submits nothing; `generate_video_batch` rejects `get_cost`, so price one request per new configuration first, then batch | 60-clips §6.2, 62-moderation |
 
 ## G. Spend
 

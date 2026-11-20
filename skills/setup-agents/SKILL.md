@@ -8,7 +8,7 @@ description: Use when installing, signing in, testing, checking the limits of or
 Opus (Claude Code) is the production: it does all the work in every project, on the person's own plan (no API cost, the plan's limits); Codex is the production for people with only ChatGPT. Read runner/README.md §1b first (the engines: docs/95-delegation.md §3). A sign-in link goes to the person in chat; a code the sign-in page shows comes back only through the masked secure secret card, never in chat. Every command prints its `next`.
 
 ## Which one
-- Claude Code (Claude Pro or Max): Opus, the production; the best by far.
+- Claude Code (Claude Pro, Max or Ultra): Opus, the production; the best by far.
 - Codex (ChatGPT Plus or Pro): the production when there is no Claude plan; also stills on the ChatGPT plan (Opus decides).
 - Muse Code (Meta account): storyboard panel, reviews and the safety scan, step by step; research-lyrics, prompt-book and chapter-motion need Claude Code or Codex (else do those stages in chat).
 - Gemini CLI (Google sign-in, or GEMINI_API_KEY billed by Google): one-off research jobs; never the Director agent.

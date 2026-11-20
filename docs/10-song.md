@@ -732,8 +732,10 @@ Expected length: about <M:SS> (Suno often runs longer than planned).
 ## 5. Generating and auditioning takes (the owner's ear is the metric)
 
 The production writes, Grok generates, the owner listens. The production writes the lyric and style fields (§4.6)
-and asks Grok with `slop relay job --kind suno`; Grok creates the song on suno.com in its own browser, where the owner
-signed in once, and downloads both takes through Suno's own Download button. The owner auditions and names the take.
+and asks Grok with `slop relay job --kind suno`; Grok creates the song through Suno's own connector (Suno's MCP
+server, which the owner signed in to once; suno.com in Grok's browser only while it is not set up) and downloads both
+takes through Suno's own download (the connector's download tool, or the site's Download button). The owner auditions
+and names the take.
 
 ### 5.1 Rounds
 
@@ -792,13 +794,15 @@ become `LOCKED` in `DECISIONS.md`.
 
 ## 6. Download, transfer, ingest
 
-### 6.1 The download (the owner does it)
+### 6.1 The download (Grok does it, on the owner's account)
 
-1. Only on a **paid plan** (Pro: 20 downloads a month; Premier: 60, and Premier's Studio exports don't count). A
-   download made while subscribed is what grants commercial rights; Free-plan and trial downloads are non-commercial.
-2. Download **WAV** on **suno.com in a browser** (the mobile app defaults to MP3). One song is one download whatever
-   the format, and stems come with it. Re-downloading the same song is free.
-3. Download only the chosen take. Auditions never need a download.
+1. Downloads are capped since 2026-09-03: Free 7 in all (trial downloads, non-commercial), Pro 20 a month, Premier 60
+   (Premier's Studio exports don't count); more can be bought. A download made while subscribed is what grants
+   commercial rights. Downloads through the connector count the same.
+2. **WAV** when offered (paid plans; the connector's download, or suno.com in a browser, where the mobile app
+   defaults to MP3). One song is one download whatever the format, and stems come with it.
+3. Grok saves both takes of a round so the production can hear them (two downloads a round): keep rounds few and each
+   one worth hearing. The owner can also audition a round in their own Suno library first.
 4. If only an MP3 is available now (phone), it is fine for analysis: Suno's MP3, decoded with ffmpeg, is
    sample-aligned with the WAV (measured lag 0). Swap in the WAV before the final mux and check it is aligned.
 
@@ -865,8 +869,9 @@ procedure that follows from it:
    Basic outputs are for personal, non-commercial use; trial downloads are not commercial. Rights from a download
    survive cancelling or running out of downloads.
 2. **No robots or scraping, and no other way of obtaining audio** than Suno's download channel (no CDN fetch, no
-   stream ripping, no recording). Grok works only on the owner's own signed-in account, at their request, and gets
-   audio only through Suno's Download button; the owner is told once, at sign-in, that the terms limit automated use.
+   stream ripping, no recording). Grok works through Suno's own MCP connector (Suno's own way for an assistant to make
+   songs), only on the owner's account and at their request, and gets audio only through Suno's own download. In the
+   browser fallback the owner is told once, at sign-in, that the terms limit automated use there.
 3. **Output-use clause (flag it):** the terms say outputs must not be used to power, enable or train other AI tools.
    It is ambiguous whether feeding the master into the video pipeline (stem separation, alignment, a video model's
    audio reference) counts. Tell the owner, and recommend a legal reading before they monetise.

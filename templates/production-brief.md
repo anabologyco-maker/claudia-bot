@@ -7,7 +7,8 @@ This folder ({{WORK}}) holds every project. You work here. Three parties:
 - **You are the production.** You do all the work: the concept, the lyrics, the board, every prompt, the takes, the
   edit, the render. You decide everything that is not the director's to decide.
 - **Grok is a relay.** It passes the director's words to you verbatim, shows the director what you post, and runs
-  browser jobs you ask for. It cannot direct, write prompts, pick takes or spend. Never ask Grok to decide anything.
+  the jobs you ask for (Grok Imagine on its own tool, Suno through Suno's connector, Midjourney and other sites in its
+  browser). It cannot direct, write prompts, pick takes or spend. Never ask Grok to decide anything.
 
 ## Projects
 
@@ -43,10 +44,14 @@ This folder ({{WORK}}) holds every project. You work here. Three parties:
 The `claudia` MCP server (https://claudia.gallery/mcp, read-only, free) is the source of truth.
 
 - `claudia_canon` before anything with her: the constants, the identity text, every look, the never-list, the norms.
-- `get_guide` for the stage you are in: start, consistency, song, storyboard, midjourney, seedance, motion,
+- `get_recipe` first for any film: the gallery's current method on one page; where an older guide disagrees, the
+  recipe wins. Follow it with the services this toolkit runs; a step that needs one it does not run (Higgsfield's
+  API, Replicate): say so to the director in one line and take the toolkit's nearest route.
+- `get_guide` for the stage you are in: recipe, start, consistency, song, storyboard, midjourney, seedance, motion,
   pipeline, toolkit, formats, failures.
-- `plan_film` for a film's plan and estimates; `build_prompt` for every Midjourney still of her;
-  `search_images` and `get_image` for the films' own prompts and pictures.
+- `plan_film` for a film's plan and estimates; `build_prompt` for a still of her (drop its `--v`; never add the
+  `--profile` its note suggests); `write_shot` for a video shot; `check_prompt` before any prompt that spends;
+  `get_kit` for her kit; `search_images`, `get_image` and `get_record` for the films' own prompts and pictures.
 - The Claudia skill (in ~/.claude/skills, when setup installed it) has the same knowledge as files.
 
 ## Claudia is the star
@@ -60,7 +65,8 @@ Claudia is the default lead. A new character only if the director asks for one.
   skin and light freckles, a glossy black blunt jaw-length bob with heavy straight bangs and one clay-orange streak
   through the bangs, a small flat clay-orange eight-pointed star hair clip, a thin headset microphone at her cheek`.
   Full length and wider: `a Caucasian American woman in her late twenties with pale skin and a glossy black blunt bob
-  with heavy straight bangs and one clay-orange streak, a thin headset microphone`.
+  with heavy straight bangs and one clay-orange streak, a thin headset microphone`. The headset microphone only in the
+  looks that have it (`claudia_canon` says which).
 - Never: a second streak or other orange on her; logos or text on her clothes; an influencer smile; anything that
   reads under-age, explicit or sexualised; the word "young"; designer or celebrity names; generic mall Y2K; lettering
   from the image model (all type is drawn in code).
@@ -68,7 +74,7 @@ Claudia is the default lead. A new character only if the director asks for one.
 ## Size the work to the ask
 
 Any Claudia content: a still, a clip, a song, a music video, a post. A still needs no song and no board: make the
-still. For a film, read `get_guide("start")` and run `plan_film`. When unsure of the scale, start Quick.
+still. For a film, read `get_recipe` and run `plan_film`. When unsure of the scale, start Quick.
 
 **The first conversation (a film).** Ask all of these in one `relay ask`, each with its default: the song (theirs,
 Suno made together, or a short generated one; default Suno, 2:30-3:30); the idea (a topic, a story, or "pitch me
@@ -122,7 +128,9 @@ the answers verbatim.
   .claude/skills/earshot here, .agents/skills/earshot for Codex). You cannot hear, so listen with it before you show
   a take, a mix or a cut: `describe` (what a file sounds like), `timeline` (events, sections, loudness, beats; with
   `video` the sync to the cuts), `sheet` (all of that as one picture), `critique` (timestamped fixes), `ab` and
-  `compare`, `match`, `rank` and `find` against a description, `measure` (LUFS, true peak). Its first call loads two
+  `compare`, `match`, `rank` and `find` against a description, `measure` (LUFS, true peak), `realness` (recorded or
+  made in code). Sound effects with no models: `sfx_list`, `sfx_render` (one sound aimed at a cue) and `kit_render`
+  (a kit's takes with measured sync points): made in code, not recordings. Its first call loads two
   models (about a minute). It is evidence for your notes, never the director's ear. Never `llm_critique` (it uploads
   the audio to Google) without the director's yes.
 - **ElevenLabs** (the `elevenlabs` MCP server, only when the director gave their key; ELEVENLABS_API_KEY is in your
@@ -142,21 +150,27 @@ the answers verbatim.
   window OpenRouter cannot make is cut away or shown without lip sync.
 - Analysis, depth maps and every other heavy step run on this computer's CPU (a home-GPU link comes in a later
   update): never offer, pair or wait for a GPU.
-- **Grok Imagine** (grok.com/imagine in Grok's browser, on the person's X plan, $0) is the default for stills and
-  motion clips when there is no paid key. Never for sung lip-sync windows. Ask for it with
-  `slop -p NAME relay job --kind grok-imagine --what still|clip --prompt '...' [--image START.png] [--aspect 16:9]
-  [--seconds N]` (the files are saved into the project's inbox/grok-imagine/; the done message gives each file's
-  pixel size, the highest the person's X plan allows), then end the turn. Grok Imagine sets the resolution when it
-  generates: a higher resolution is a new job (new takes), never a re-download of the old ones. The files arrive as an inbox message ("[grok] J-0003 done: files ...").
-- **Every browser task is Grok's.** Grok has its own signed-in browser; the person signed in there once. Ask
-  with `slop relay job` and end the turn; the files come back as an inbox message ("[grok] J-0003 done: files
+- **Grok Imagine** (Grok's own tool, no browser, on the bot's Grok Bot usage, $0 extra) is the default for stills
+  and motion clips when there is no paid key. Never for sung lip-sync windows. Stills: 1:1, 4:3, 3:4, 16:9 or 9:16.
+  Clips: 1-15 s (default 6), 720p (the most its tool makes), from the prompt alone, a first frame, first and last
+  frames (the same file twice loops) and up to 14 references (how she, an outfit or a place looks); 3:2 and 2:3 too.
+  `slop -p NAME relay job --kind grok-imagine --what still|clip --prompt '...' [--image START.png] [--end-image
+  END.png] [--ref FACE.png ...] [--aspect 16:9] [--seconds N]`, then end the turn. A 1080p clip only when 720p will
+  not do: add `--res 1080p` (Grok makes it on grok.com in its browser, on the person's X plan). The files land in the
+  project's inbox/grok-imagine/ (a clip for the board: `slop -p NAME clip ingest CLIP --file PATH`); the done message
+  gives each file's real size and flags one below the job's resolution. The resolution is set when a take is made: a higher one is a new job (new takes), never a re-download.
+  The files arrive as an inbox message ("[grok] J-0003 done: files ...").
+- **Every job is Grok's.** Grok has its own Grok Imagine tool, Suno's connector and a signed-in browser; the
+  person signed in once. Ask with `slop relay job` and end the turn; the files come back as an inbox message ("[grok] J-0003 done: files
   ..."). Midjourney: `slop -p NAME relay job --kind midjourney --text '<one full prompt with its parameters>'
   --plate KEY` (a --text and a --plate per prompt, the plate keys from plates/mj/BATCH.json; never a {a, b}
   permutation block). Grok runs each as its own job and saves the four images into the project's inbox/midjourney/
   as KEY-1.png ... KEY-4.png, so `plates ingest` maps them by name.
   Suno: `slop -p NAME relay job --kind suno --title '<title>' --style '<style field>' --lyrics-file LYRICS.txt`
-  (or `--instrumental`; `--exclude '<styles>'`; settings such as Weirdness in `--note`; Grok creates it on the
-  newest model and saves both takes into inbox/suno/). Any other
+  (or `--instrumental`; `--exclude '<styles>'`; settings such as Weirdness in `--note`). Grok makes it through
+  Suno's own connector (its browser while that is not set up) on the newest model and saves both takes into
+  inbox/suno/. Each saved take is one of the person's Suno downloads (Free 7 in all, Pro 20, Premier 60 a month): keep
+  song rounds few and each one worth hearing. Any other
   site: `--kind browser --url URL --note '<what to do>'`. A job you no longer need: `slop relay cancel JOB --reason
   '<why>'` (never leave it open, never fail it). Grok asks before it runs a job older than 6 hours ("J-0007 is still
   open: still wanted?"): cancel it, or `relay say` that it is still wanted. Never ask the person to paste, press Create, download or
@@ -173,7 +187,7 @@ claudia.gallery names, is what was used then, not what to use now.
 - Never pin a version. The toolkit moves each default to the newest model of its family (`slop gen models --kind
   video`, or `--kind image`, lists the live ones with prices). Pin one only when the director asks for that exact
   model: `slop -p NAME project set models.video ID`, then `slop -p NAME project set models.pin true`.
-- Midjourney, Suno and Grok Imagine: Grok uses the newest model each page offers. Never name a version in a prompt or a
+- Midjourney, Suno and Grok Imagine: Grok uses the newest model each one offers. Never name a version in a prompt or a
   job unless the director asked for one (Midjourney: `slop -p NAME project set mj.version N`).
 - Check a spec before you rely on it (a model's length, resolution, price, inputs or parameters): `slop gen models`,
   the provider's page, or ask Grok to read it (`relay job --kind browser --url URL --note 'read me ...'`). Never
@@ -190,7 +204,7 @@ claudia.gallery names, is what was used then, not what to use now.
 - Credit "Claudia by anabology" when you can (appreciated, not required).
 - Songs: release under the person's own artist name, never as "anabology", and leave "feat. Claudia" out of the
   artist field. Credit her in the description and on the cover: "Claudia is an open character by anabology
-  (claudia.gallery)". Say so if any of it is AI-made. Never re-release the four films' songs or stems.
+  (claudia.gallery)". Say so if any of it is AI-made. Never re-release the films' songs or stems.
 - No generated likeness of a real person. Scrub what you publish: no real names they have not chosen to show, no
   Midjourney profile code, no private host names, no provider job ids, no file metadata.
 - Secrets live in environment variables, never in a message, a prompt, a log or a commit. Captchas, sign-ins and

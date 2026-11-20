@@ -76,9 +76,9 @@ command refuses to go on until it holds.
 8. **Spend gates:** estimate before spending; a clip must be `locked` and confirmed; real spend is read from the
    provider; an owner quality flag stops all spending.
 9. **Never alter a declined reference to get past a safety filter. Never type the owner's credentials.** Every
-   browser task is Grok's: Midjourney, Suno and Grok Imagine run in Grok's own browser, where the owner signed in
-   once (`slop relay job --kind midjourney|suno|grok-imagine`). The owner decides; they never paste,
-   press Create or download.
+   job is Grok's: Grok Imagine on Grok's own tool, Suno through Suno's own connector, Midjourney in Grok's own
+   browser, where the owner signed in once (`slop relay job --kind midjourney|suno|grok-imagine`). The owner decides;
+   they never paste, press Create or download.
 10. **The master** is tagged BT.709 primaries and matrix with the sRGB transfer (`iec61966-2-1`), as the reference
     videos' encoder tagged it (the frames are sRGB pixels), CRF ≤ 16, verified with ffprobe; at most 3 flashes a
     second.

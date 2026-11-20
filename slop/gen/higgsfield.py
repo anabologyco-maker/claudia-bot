@@ -6,10 +6,14 @@ Request shape (the one that ran 81 takes in production, field rules verbatim):
   resolution "720p" (7 credits/s) or "480p" + draft:true (3 credits/s, can be finalized to 1080p within 7 days);
   aspect_ratio explicit; duration integer 4–8; medias [{role, value: media_id}] ordered start_image, image_references,
   video_references, audio_references — a start_image is @Image1, so a reference beside it is @Image2 (the prompt is
-  renumbered for that); generate_audio omitted (= true) for sung clips, false only for motion clips; never use_unlim.
-Preflight: generate_video {params: {..., get_cost: true}} returns the credits without submitting (not allowed inside
-generate_video_batch). Submit verbatim with generate_video_batch {requests:[...]} — never edit the prompt; write the job
-id down immediately; on a transport timeout the outcome is unknown: do NOT resubmit (check `transactions` first).
+  renumbered for that); generate_audio omitted (= true) for sung clips, false only for motion clips; use_unlim omitted
+  (an `unlim_choice` reply is a question for the user, never answered for them).
+Preflight: estimate_video_cost {params} with the request's own params returns the credits and submits nothing (the
+connector's generate_video no longer takes get_cost, and generate_video_batch never did; images: estimate_image_cost,
+audio: estimate_audio_cost). The request file keeps that call as `estimate` {tool, params}; a file written before 0.3.7
+has a `get_cost` object instead, which read_request reads as the same quote. Submit verbatim with generate_video_batch
+{requests:[...]} — never edit the prompt; write the job id down immediately; on a transport timeout the outcome is
+unknown: do NOT resubmit (check `transactions` first; retry only once the outcome is known).
 Failures: "failed" with no reason = the silent input filter (refunded; identical resubmits fail — reword without changing
 the beat); "nsfw" = the output was flagged (refunded; change the staging, not the image); a preset recommendation
 instead of a job = resubmit that item once with declined_preset_id set to the named preset.
@@ -19,12 +23,12 @@ submit` puts the start image, references and window on the running quick tunnel 
 start|audio --tunnel` does it later (both fill uploads[].https_url, method "media_import_url", in the open request
 file). The fallback media_upload presigned PUT needs the signed header `If-None-Match: *` or it answers 403.
 Finalize (`slop clip submit CLIP --finalize-from TAKE`): a kept 480p draft (draft:true) can be finalized at 1080p within 7
-days with draft_job_id = the draft's job id; observed 12 credits/s (get_cost is the truth). A finalize may not keep the
-draft's lip sync, so a sung clip's finalized take must be measured again (`slop clip sync`).
-Credits per second (seedance_2_5, observed 2026-09/10; get_cost is the truth): 480p draft 3, 720p 7, 1080p 12.
+days with draft_job_id = the draft's job id; observed 12 credits/s (estimate_video_cost is the truth). A finalize may
+not keep the draft's lip sync, so a sung clip's finalized take must be measured again (`slop clip sync`).
+Credits per second (seedance_2_5, observed 2026-09/10; estimate_video_cost is the truth): 480p draft 3, 720p 7, 1080p 12.
 Refused or failed, never left "requested" (Studio run: a refused finalize read "submitted" and its 48 credits stayed in
-the ledger, 114 logged vs 66 real): when get_cost or generate_video_batch answers an error instead of a price / a job
-id, or the balance is too low, nothing was charged and the bot records it at once: `slop clip ingest CLIP --failed
+the ledger, 114 logged vs 66 real): when estimate_video_cost or generate_video_batch answers an error instead of a price
+/ a job id, or the balance is too low, nothing was charged and the bot records it at once: `slop clip ingest CLIP --failed
 "rejected: <the reply, verbatim>"` (the REJECTED step comes after the unlim_choice / timeout step: neither of those is a
 refusal, and a timeout may have run and been charged); a job that ends failed / nsfw: `--failed "<reason>"`. The ledger then
 records that take as failed with 0 credits (ledger.record turns the refund into a settlement) and `slop status` shows
@@ -47,6 +51,7 @@ MODEL = "seedance_2_5"
 CREDITS_PER_S = {"480p": 3, "720p": 7, "1080p": 12}
 USD_PER_CREDIT = 0.0526                       # 2,000-credit pack price (2026-10-01), for the confirm-over-$ gate only
 ROLES = ("start_image", "image_references", "video_references", "audio_references")
+VIDEO_ESTIMATE = "estimate_video_cost"        # the connector's free quote: generate_video's own params, submits nothing
 
 
 def credits(duration: int, resolution: str) -> float:
@@ -97,9 +102,72 @@ def upload_method(rec: dict, src: Path | None) -> dict:
     return {"method": "media_upload", "https_url": None, "curl_header": "If-None-Match: *"}
 
 
+def estimate(params: dict) -> dict:
+    """The request file's price check: estimate_video_cost with exactly the params the batch submits (no get_cost flag:
+    the connector's generate_video no longer takes it, and the estimate tool submits nothing)."""
+    return {"tool": VIDEO_ESTIMATE, "params": {k: v for k, v in params.items() if k != "get_cost"}}
+
+
+def _preflight_step(cr: float) -> str:
+    return (f"PREFLIGHT (free): {VIDEO_ESTIMATE} {{params: <request.params, unchanged>}} (= the `estimate` object in "
+            f"this file; it submits nothing) — expect about {cr:g} credits; stop and tell the user if it differs. "
+            "medias[].value must be a media_id (from media_import_url, or media_upload + media_confirm; never an https "
+            "URL).")
+
+
+def _finalize_preflight_step(cr: float) -> str:
+    return (f"PREFLIGHT (free): {VIDEO_ESTIMATE} {{params: <request.params, unchanged>}} (= the `estimate` object; it "
+            f"submits nothing) - expect about {cr:g} credits (finalize prices are not published: {VIDEO_ESTIMATE} is "
+            "the truth). If it differs: stop and tell the user. If it refuses the finalize instead of a price (asks for "
+            "medias, refuses the draft_job_id, any error): do not invent other params and do not submit - REJECTED "
+            "below.")
+
+
+# the words of a pre-0.3.7 REJECTED step that named the old generate_video + get_cost step
+_OLD_WORDS = (("get_cost or the batch refuses", f"{VIDEO_ESTIMATE} or the batch refuses"),
+              ("after get_cost", "after the estimate"))
+
+
+def upgrade_request(req: dict, pdir: Path | None = None) -> dict:
+    """A request file written before 0.3.7 priced itself with generate_video + get_cost, which the connector no longer
+    takes: its `get_cost` object is read as `estimate` (the same params, without the flag) and its PREFLIGHT and
+    REJECTED steps name estimate_video_cost, so an old project's open request still runs. A current file: unchanged."""
+    old = req.pop("get_cost", None)
+    if old is not None and "estimate" not in req:
+        prm = (old.get("params") if isinstance(old, dict) else None) or (req.get("request") or {}).get("params") or {}
+        req["estimate"] = estimate(prm)
+    if not isinstance(req.get("how_to_run"), list):
+        return req
+    cr = float(req.get("expected_credits") or 0)
+    pre = _finalize_preflight_step(cr) if req.get("kind") == "finalize" else _preflight_step(cr)
+    steps = []
+    for s in req["how_to_run"]:
+        if isinstance(s, str) and "get_cost" in s:
+            if s.startswith("PREFLIGHT"):
+                s = _stamp(pre, pdir) if pdir else pre
+            else:
+                for a, b in _OLD_WORDS:
+                    s = s.replace(a, b)
+        steps.append(s)
+    req["how_to_run"] = steps
+    return req
+
+
+def read_request(p: Path, pdir: Path | None = None) -> dict | None:
+    """A request file as this version writes it (an older file's generate_video + get_cost step is upgraded:
+    upgrade_request); None when it is missing or not a JSON object."""
+    import json
+    try:
+        req = json.loads(Path(p).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return upgrade_request(req, pdir) if isinstance(req, dict) else None
+
+
 def refresh_uploads(pdir: Path, clip: dict) -> str | None:
     """After `slop gen host` recorded a URL or a media_id: update the open request file of the clip's requested
-    Higgsfield take (its uploads' method/https_url, and a media_id in place of its placeholder). Returns its path."""
+    Higgsfield take (its uploads' method/https_url, and a media_id in place of its placeholder). Returns its path.
+    A file written before 0.3.7 is rewritten in the current shape (read_request)."""
     import json
     tk = next((t for t in reversed(clip.get("takes") or []) if t.get("provider") == "higgsfield"
                and t.get("status") == "requested" and t.get("request_file")), None)
@@ -108,14 +176,13 @@ def refresh_uploads(pdir: Path, clip: dict) -> str | None:
     p = store.absp(pdir, tk["request_file"])
     if not p or not p.is_file():
         return None
-    try:
-        req = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    req = read_request(p, pdir)
+    if req is None:
         return None
     hosted = clip.get("hosted") or {}
     win = clip.get("window") or {}
     medias = ((req.get("request") or {}).get("params") or {}).get("medias") or []
-    cost_medias = ((req.get("get_cost") or {}).get("params") or {}).get("medias") or []
+    cost_medias = ((req.get("estimate") or {}).get("params") or {}).get("medias") or []
     keep = []
     for u in req.get("uploads") or []:
         rec = hosted.get(u.get("hosted_key") or "") or {}
@@ -139,7 +206,7 @@ FINALIZE_DAYS = 7
 
 def build_finalize(pdir: Path, clip: dict, draft: dict, *, index: int = 0) -> dict:
     """The request that finalizes a 480p draft take at 1080p (`draft_job_id`): the draft's own model, mode, prompt,
-    duration and aspect, no medias (the draft job carries them). get_cost is the truth for the price."""
+    duration and aspect, no medias (the draft job carries them). estimate_video_cost is the truth for the price."""
     cid = clip["id"]
     b = draft.get("body") or {}
     dur = int(b.get("duration") or (clip.get("body") or {}).get("duration") or 5)
@@ -151,21 +218,19 @@ def build_finalize(pdir: Path, clip: dict, draft: dict, *, index: int = 0) -> di
     cr = float(FINALIZE_CREDITS_PER_S * dur)
     sung = clip.get("kind") == "sung"
     steps = [
-        f"PREFLIGHT (free): generate_video {{params: <request.params plus \"get_cost\": true>}} (= the `get_cost` object) - "
-        f"expect about {cr:g} credits (finalize prices are not published: get_cost is the truth). If it differs: stop and "
-        "tell the user. If it refuses the finalize instead of a price (asks for medias, refuses the draft_job_id, any "
-        "error): do not invent other params and do not submit - REJECTED below.",
+        _finalize_preflight_step(cr),
         "SUBMIT (spends credits): generate_video_batch {requests: [request]} with every key and value VERBATIM. Then record "
         f"the job id at once: slop clip ingest {cid} --job-id JOB_ID --pending",
-        "If the reply is an `unlim_choice` question: ask the user, then send the same request with use_unlim set to their "
-        "answer (never set it yourself). On a transport timeout: do NOT resubmit and do NOT record it as rejected; check "
-        "`transactions` first (a charge or a job there: it ran, record that job id).",
-        f"REJECTED (an error instead of a price or a job id: get_cost or the batch refuses the finalize, or the balance is "
-        f"too low; NOT an unlim_choice question or a timeout): nothing was charged and the draft stays the clip's take. "
-        f"Tell the user and record it at once, never leave it requested (the ledger then counts 0, status shows it "
-        f"rejected): slop clip ingest {cid} --failed \"rejected: <the reply, verbatim>\" (the user says not to send it "
-        "after get_cost: --failed \"rejected: not sent, <why>\"). Then stop: do not re-lock or resubmit the clip (any "
-        "retry advice that command prints is for a new take, not for a finalize).",
+        "If the reply is an `unlim_choice` question (nothing was submitted): ask the user, then send the same request with "
+        "use_unlim set to their answer (never choose for them). On a transport timeout the outcome is unknown: do NOT "
+        "resubmit and do NOT record it as rejected; check `transactions` first (a charge or a job there: it ran, record "
+        "that job id); retry only once the outcome is known.",
+        f"REJECTED (an error instead of a price or a job id: {VIDEO_ESTIMATE} or the batch refuses the finalize, or the "
+        f"balance is too low; NOT an unlim_choice question or a timeout): nothing was charged and the draft stays the "
+        f"clip's take. Tell the user and record it at once, never leave it requested (the ledger then counts 0, status "
+        f"shows it rejected): slop clip ingest {cid} --failed \"rejected: <the reply, verbatim>\" (the user says not to "
+        "send it after the estimate: --failed \"rejected: not sent, <why>\"). Then stop: do not re-lock or resubmit the "
+        "clip (any retry advice that command prints is for a new take, not for a finalize).",
         "POLL: jobs_wait {jobs:[{index:0, job_id}], timeout_seconds:15}; repeat after poll_after_seconds until terminal.",
         f"INGEST: completed -> slop clip ingest {cid} --url RESULT_URL --job-id JOB_ID --credits <the credits really "
         f"charged: 0 if it ran on use_unlim>; failed -> slop clip ingest {cid} --failed \"<the reason, verbatim>\" "
@@ -179,7 +244,7 @@ def build_finalize(pdir: Path, clip: dict, draft: dict, *, index: int = 0) -> di
     return {"clip": cid, "provider": "higgsfield", "kind": "finalize", "created": store.now(), "finalize_of": draft["n"],
             "draft_job_id": draft["id"], "expected_credits": cr, "expected_usd_at_pack_price": round(cr * USD_PER_CREDIT, 2),
             "how_to_run": steps, "uploads": [], "request": {"index": index, "params": params},
-            "get_cost": {"params": {**params, "get_cost": True}},
+            "estimate": estimate(params),
             "rules": ["finalize only a draft that was kept (sung: a measured copy)", "within 7 days of the draft",
                       "a refused finalize is recorded at once (clip ingest --failed \"rejected: ...\"), never left requested",
                       "never set use_unlim yourself", "measure the finalized take (clip sync) before edit edl or render",
@@ -257,22 +322,21 @@ def build_request(pdir: Path, clip: dict, *, resolution: str = "720p", index: in
     if uploads:
         steps.append(UPLOAD_STEP.format(cid=cid))
     steps += [
-        f"PREFLIGHT (free): generate_video {{params: <request.params plus \"get_cost\": true>}} (= the `get_cost` object in "
-        f"this file) — expect about {cr:g} credits; stop and tell the user if it differs. medias[].value must be a media_id "
-        "(never an https URL).",
+        _preflight_step(cr),
         "SUBMIT (spends credits): generate_video_batch {requests: [request]} with every key and value VERBATIM (never edit the "
         "prompt; never add get_cost or count inside the batch). Then immediately record the job id: slop clip ingest " + cid
         + " --job-id JOB_ID --pending",
-        "If the reply is an `unlim_choice` question instead of a job (the account holds free generations): ask the user, then "
-        "send the same request again with use_unlim set to their answer. Never set use_unlim yourself. If the item is "
-        "refused with a preset recommendation: resubmit only that item once with declined_preset_id set to that preset id. "
-        "On a transport timeout: do NOT resubmit and do NOT record it as rejected; check `transactions` first (a charge or "
-        "a job there: it ran, record that job id).",
-        f"REJECTED (an error instead of a price or a job id: get_cost or the batch refuses the request, or the balance is "
-        f"too low; NOT an unlim_choice question, the one preset resubmit above, or a timeout): nothing was charged. Stop, "
-        f"tell the user, and record it at once (the ledger then counts 0): slop clip ingest {cid} --failed \"rejected: "
-        "<the reply, verbatim>\". The same when the user says not to send it after get_cost: --failed \"rejected: not "
-        "sent, <why>\".",
+        "If the reply is an `unlim_choice` question instead of a job (the account holds free generations; nothing was "
+        "submitted): ask the user, then send the same request again with use_unlim set to their answer (true or false). "
+        "Never choose for them. If the item is refused with a preset recommendation: resubmit only that item once with "
+        "declined_preset_id set to that preset id. On a transport timeout the outcome is unknown: do NOT resubmit and do "
+        "NOT record it as rejected; check `transactions` first (a charge or a job there: it ran, record that job id); "
+        "retry only once the outcome is known.",
+        f"REJECTED (an error instead of a price or a job id: {VIDEO_ESTIMATE} or the batch refuses the request, or the "
+        f"balance is too low; NOT an unlim_choice question, the one preset resubmit above, or a timeout): nothing was "
+        f"charged. Stop, tell the user, and record it at once (the ledger then counts 0): slop clip ingest {cid} --failed "
+        "\"rejected: <the reply, verbatim>\". The same when the user says not to send it after the estimate: --failed "
+        "\"rejected: not sent, <why>\".",
         "POLL: jobs_wait {jobs:[{index:0, job_id}], timeout_seconds:15}; repeat after poll_after_seconds until terminal.",
         f"INGEST: completed -> slop clip ingest {cid} --url RESULT_URL --job-id JOB_ID --credits {cr:g} (the credits "
         f"really charged: 0 if it ran on use_unlim); "
@@ -284,7 +348,7 @@ def build_request(pdir: Path, clip: dict, *, resolution: str = "720p", index: in
     return {"clip": cid, "provider": "higgsfield", "created": store.now(), "expected_credits": cr,
             "expected_usd_at_pack_price": round(cr * USD_PER_CREDIT, 2), "how_to_run": steps, "uploads": uploads,
             "request": {"index": index, "params": params},
-            "get_cost": {"params": {**params, "get_cost": True}}, "prompt_note": note,
+            "estimate": estimate(params), "prompt_note": note,
             "rules": ["mode omni_reference is always explicit", "never set use_unlim yourself (ask the user on unlim_choice)",
                       "never alter an image to pass a filter", "one take per request; keep the job id"]}
 

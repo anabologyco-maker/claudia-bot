@@ -219,7 +219,8 @@ def test_setup_connects_the_gallery_signs_in_and_hands_off_to_the_relay():
     relay; the person does every sign-in."""
     setup = read(SKILLS / "claudia-setup" / "SKILL.md")
     for must in ("https://claudia.gallery/mcp", "claudia_canon", "skill setup-agents", "`slop --json relay setup`",
-                 "https://grok.com/imagine", "I never type passwords", "`slop --json onboard status`",
+                 "https://grok.com/imagine", "Never type a password", "Grok Imagine is your own tool",
+                 "Secure Form", "`slop --json onboard status`",
                  "skill claudia-relay", "onboard set tier director"):
         assert must in setup, must
     for setting in ("onboard set tier", "onboard set coding-agents", "onboard set suno-plan", "onboard set mj-plan"):
@@ -288,8 +289,9 @@ def test_setup_accounts_covers_every_account():
     text = read(SKILLS / "setup-accounts" / "SKILL.md")
     for must in ("OPENROUTER_API_KEY", "credit limit", "SearchPlugins", "question widget", "next turn",
                  "onboard mark higgsfield --connected", "onboard mark drive --connected", "onboard set suno-plan",
-                 "suno-signin --done", "skill suno", "onboard set mj-plan", "P button",
-                 "onboard apply", "mj-signin --done", "skill midjourney", "never type passwords", "ARENA_TOKEN",
+                 "suno-signin --done", "skill suno", "onboard mark suno-mcp --connected", "https://api.suno.com/mcp",
+                 "suno.com/mcp", "onboard set mj-plan", "P button", "onboard apply", "mj-signin --done",
+                 "skill midjourney", "You never see, type or store a secret", "Secure Form", "ARENA_TOKEN",
                  "secure secret card"):
         assert must in text, must
 

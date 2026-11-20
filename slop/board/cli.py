@@ -321,7 +321,7 @@ def register(sub) -> None:
                    help="assign an unmatched job uuid prefix or file name to a plate (repeatable)")
     p.add_argument("--force", action="store_true", help="overwrite candidate numbers that already exist")
     p.add_argument("--credits", type=float, help="--url from Higgsfield: the credits the generation cost (from its "
-                                                 "get_cost / job) - recorded in the project ledger (spend)")
+                                                 "estimate_image_cost / job) - recorded in the project ledger (spend)")
     p.add_argument("--job-id", help="--url from Higgsfield: the generation's job id (ledgered once per job)")
     p.add_argument("--model", help="--url from Higgsfield: the model that made the still (for the ledger)")
     p.set_defaults(func=cmd_ingest)

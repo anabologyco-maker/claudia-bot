@@ -276,5 +276,7 @@ def _rejected_after_unlim_and_timeout(req: dict) -> None:
     i_unl = next(i for i, s in enumerate(steps) if "unlim_choice" in s and "timeout" in s)
     assert i_unl < i_rej, steps
     assert "NOT an unlim_choice question" in steps[i_rej] and "or a timeout" in steps[i_rej]
-    assert "--failed \"rejected: not sent, <why>\"" in steps[i_rej]        # the owner said no after get_cost: closed too
+    assert "--failed \"rejected: not sent, <why>\"" in steps[i_rej]        # the owner said no after the estimate: closed too
+    assert "after the estimate" in steps[i_rej] and "estimate_video_cost or the batch refuses" in steps[i_rej]
     assert "do NOT record it as rejected" in steps[i_unl] and "`transactions`" in steps[i_unl]
+    assert "never choose for them" in steps[i_unl].lower() and "retry only once the outcome is known" in steps[i_unl]

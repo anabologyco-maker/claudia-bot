@@ -7,8 +7,8 @@
   slop onboard apply --project NAME          copy the recorded Midjourney plan and profile code into that project
 
 Items (id - group): tier (start) | toolkit, path, doctor, full-profile (toolkit) | openrouter, arena (keys) |
-higgsfield, drive, video (connectors; video = clips through OpenRouter or Higgsfield) | suno, suno-signin, lyria
-(music) | midjourney, mj-profile, mj-signin, api-images, codex-images (stills) | coding-agents, agent-claude,
+higgsfield, drive, video (connectors; video = clips through OpenRouter or Higgsfield) | suno, suno-mcp (Suno's
+own connector), suno-signin (its browser fallback), lyria (music) | midjourney, mj-profile, mj-signin, api-images, codex-images (stills) | coding-agents, agent-claude,
 agent-codex, agent-muse, agent-gemini (agents on the box) |
 home-claude, home-codex, home-muse, home-gemini (agents on the user's own computer) | gpu (home GPU) | taste (user-level
 taste profile) | first-project.

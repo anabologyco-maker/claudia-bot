@@ -71,7 +71,7 @@ def test_claude_wrong_code_fails_and_a_new_link_is_needed(env, monkeypatch):
         rc, out = K.run("agents", "login", "claude", "--code-from-env", "CLAUDE_LOGIN_CODE")
         assert rc == 1 and out["state"] == "failed"
         assert "did not accept the code" in out["error"] and out["next"] == "slop agents login claude"
-        assert any("status code 400" in t for t in out["tail"])
+        assert any("wasn't accepted" in t for t in out["tail"])   # the 2.1.3xx wording
         assert not K.pids_alive("fakecli.py claude auth login")   # the waiting CLI was killed
         rc, out = K.run("agents", "login", "claude", "--code-from-env", "CLAUDE_LOGIN_CODE")
         assert rc == 1 and "no Claude Code sign-in is waiting" in out["error"] and "NEW link" in out["error"]

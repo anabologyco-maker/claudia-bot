@@ -1350,8 +1350,8 @@ def ingest_urls(pdir: Path, urls: list[str], plate: str, batch: str | None = Non
     if not plate:
         raise SlopError("--url needs --plate PLATE (the plate these images are candidates for, e.g. p004)")
     if credits is not None and not (0 <= float(credits) <= 100000):
-        raise SlopError(f"--credits {credits:g}: give the credits the generation cost (0 or more; get_cost / the job "
-                        "tells it); nothing was downloaded")
+        raise SlopError(f"--credits {credits:g}: give the credits the generation cost (0 or more; estimate_image_cost / "
+                        "the job tells it); nothing was downloaded")
     keys, _ = _known_plates(pdir)
     base = plate.split("~")[0]
     if keys and base not in keys:

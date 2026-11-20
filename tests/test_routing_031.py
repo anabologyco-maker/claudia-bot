@@ -74,13 +74,16 @@ def test_grok_sees_every_field_of_a_job(tmp_path, monkeypatch):
         assert want in r["text"], want
 
 
-def test_done_reports_each_files_real_size(tmp_path, monkeypatch):
-    """Grok Imagine's button can show 720p and still render 480p: the production learns each file's real size, and
-    Grok is warned about a file that came out smaller than the rest (by area, so a portrait still is no warning)."""
+@pytest.mark.parametrize("route", ["browser", "native"])
+def test_done_reports_each_files_real_size(tmp_path, monkeypatch, route):
+    """grok.com's button can show the highest resolution and still render lower: the production learns each file's
+    real size, and on the browser route Grok is warned about a file that came out smaller than the rest (by area, so a
+    portrait still is no warning). Grok's own tool has no such button: the sizes go to the production, no warning."""
     from PIL import Image
     env = RT.setup(tmp_path, monkeypatch)
     assert K.run("relay", "setup")[0] == 0
-    rc, out = K.run("relay", "job", "--kind", "grok-imagine", "--what", "still", "--prompt", "her on a rooftop")
+    job = (("--what", "clip", "--res", "1080p") if route == "browser" else ("--what", "still"))
+    rc, out = K.run("relay", "job", "--kind", "grok-imagine", *job, "--prompt", "her on a rooftop")
     assert rc == 0, out
     save = Path(out["save"])
     for name, size in (("a.png", (1280, 704)), ("b.png", (704, 1280)), ("c.png", (736, 400))):
@@ -89,7 +92,10 @@ def test_done_reports_each_files_real_size(tmp_path, monkeypatch):
     assert rc == 0, done
     assert done["sizes"] == {str(save / "a.png"): "1280x704", str(save / "b.png"): "704x1280",
                              str(save / "c.png"): "736x400"}
-    assert "c.png" in done["warn"] and "a.png" not in done["warn"] and "b.png" not in done["warn"]
+    if route == "browser":
+        assert "c.png" in done["warn"] and "a.png" not in done["warn"] and "b.png" not in done["warn"]
+    else:
+        assert "warn" not in done, done
     msg = [json.loads(x) for x in (env["rd"] / "inbox.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()][-1]
     assert "\nsizes: a.png 1280x704, b.png 704x1280, c.png 736x400" in msg["text"]
 

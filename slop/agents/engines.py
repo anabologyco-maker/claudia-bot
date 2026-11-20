@@ -73,8 +73,9 @@ SIGNIN_ENV = {
 # handed to any engine run.
 LOGIN_CODE_ENV = ("CLAUDE_LOGIN_CODE", "GEMINI_LOGIN_CODE")
 # Set by a parent Claude Code session; a child CLI must not see them (it would attach to the parent).
-PARENT_SESSION_RE = re.compile(r"^(CLAUDECODE|CLAUDE_CODE_(ENTRYPOINT|SESSION_ID|CHILD_SESSION|HOST_SESSION_ID|"
-                               r"OAUTH_SCOPES|SDK_HAS_HOST_AUTH_REFRESH|MESSAGING_\w+))$")
+PARENT_SESSION_RE = re.compile(r"^(CLAUDECODE|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_AUTOCOMPACT_PCT_OVERRIDE|"
+                               r"CLAUDE_CODE_(ENTRYPOINT|SESSION_ID|CHILD_SESSION|HOST_SESSION_ID|OAUTH_SCOPES|"
+                               r"SDK_HAS_HOST_AUTH_REFRESH|SESSION_ATTENDED|EXECPATH|MESSAGING_\w+))$")
 # The toolkit's own secrets never reach an agent CLI.
 TOOLKIT_SECRETS = ("OPENROUTER_API_KEY", "HIGGSFIELD_API_KEY", "ARENA_TOKEN", "ELEVENLABS_API_KEY")
 
@@ -92,11 +93,11 @@ def other_engines_env(engine: str) -> set[str]:
 
 SPEC: dict[str, dict] = {
     "claude": {
-        "title": "Claude Code", "plan": "a Claude plan (Pro or Max)", "bin": "claude",
-        "signin": "their Claude account (Pro or Max plan)",
+        "title": "Claude Code", "plan": "a Claude plan (Pro, Max or Ultra)", "bin": "claude",
+        "signin": "their Claude account (Pro, Max or Ultra plan)",
         "methods": ("native", "npm"), "default_method": "native",
         "installer": "https://claude.ai/install.sh", "installer_ps1": "https://claude.ai/install.ps1",
-        "npm": "@anthropic-ai/claude-code", "node_min": 18,
+        "npm": "@anthropic-ai/claude-code", "node_min": 22,    # npm builds need Node 22 since 2.1.198
         "login": "paste", "login_args": ["auth", "login", "--claudeai"], "login_env": {"BROWSER": "false"},
         "code_secret": "CLAUDE_LOGIN_CODE", "token_env": "CLAUDE_CODE_OAUTH_TOKEN",
         "url_re": r"(https://\S+/oauth/authorize\?\S+)\s",

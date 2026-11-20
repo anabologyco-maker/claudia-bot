@@ -124,7 +124,7 @@ const ENGINE_SIGNIN_ENV = { CLAUDE_CODE_OAUTH_TOKEN: 'claude' };
 // One-time sign-in codes from the secure card: typed into the waiting login only, never handed to a job.
 const LOGIN_CODE_ENV = ['CLAUDE_LOGIN_CODE', 'GEMINI_LOGIN_CODE'];
 // Set by a parent Claude Code session; a child `claude` must not see them (it would attach to the parent).
-const PARENT_SESSION_RE = /^(CLAUDECODE|CLAUDE_CODE_(ENTRYPOINT|SESSION_ID|CHILD_SESSION|HOST_SESSION_ID|OAUTH_SCOPES|SDK_HAS_HOST_AUTH_REFRESH|MESSAGING_\w+))$/;
+const PARENT_SESSION_RE = /^(CLAUDECODE|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_AUTOCOMPACT_PCT_OVERRIDE|CLAUDE_CODE_(ENTRYPOINT|SESSION_ID|CHILD_SESSION|HOST_SESSION_ID|OAUTH_SCOPES|SDK_HAS_HOST_AUTH_REFRESH|SESSION_ATTENDED|EXECPATH|MESSAGING_\w+))$/;
 
 const JOB_KEYS = new Set(['id', 'kind', 'engine', 'title', 'created', 'brief_template', 'brief', 'prompt_file',
   'project_dir', 'cwd', 'workflow', 'workflow_args', 'vars', 'model', 'effort', 'permission_mode', 'allowed_tools',

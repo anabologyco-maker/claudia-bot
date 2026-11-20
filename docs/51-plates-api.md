@@ -67,9 +67,10 @@ background), `nano_banana_pro`, `nano_banana_2`, `seedream_v5_pro`, `seedream_v5
   keeps drifting. Claudia's identity stays her canon text.
 - `soul_location` (consistent places), `soul_cinematic`, `soul_2`.
 
-Per-image credit prices are not published in the catalog. Preflight with the tool's cost option where it exists
-(`get_cost: true` on the generate tools that take it), or make one image and read the `transactions` row. A credit costs
-about 5.0–5.9 ¢ on top-up packs. Never set `use_unlim: true` unless the owner asks.
+Per-image credit prices are not published in the catalog. Preflight with the connector's free quote,
+`estimate_image_cost` (the same `params` as `generate_image`; it submits nothing), or make one image and read the
+`transactions` row. A credit costs about 5.0–5.9 ¢ on top-up packs. Never set `use_unlim: true` unless the owner asks;
+an `unlim_choice` reply is a question for the owner, never answered for them.
 
 ### 2.3 Grok Bot's built-in `GenerateImage`
 

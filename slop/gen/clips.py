@@ -49,8 +49,9 @@ orv.py / prompts.py flow, made generic and gated for a weaker operator:
   * hosting: while the quick tunnel runs, `submit` puts the window (OpenRouter @Audio1) or the start image, references
     and window (Higgsfield: the request lists them for media_import_url) on it by itself (auto_host); without a tunnel
     the error / request says to start it first (media_upload with the signed `If-None-Match: *` header is the fallback).
-  * `submit --finalize-from TAKE` (Higgsfield): a kept 480p draft -> a 1080p finalize request (draft_job_id, get_cost
-    first, ~12 credits/s) as a new take; a sung clip's finalized take carries needs_sync until `clip sync` measures it.
+  * `submit --finalize-from TAKE` (Higgsfield): a kept 480p draft -> a 1080p finalize request (draft_job_id,
+    estimate_video_cost first, ~12 credits/s) as a new take; a sung clip's finalized take carries needs_sync until
+    `clip sync` measures it.
     A finalize recorded failed / declined / rejected (`ingest --failed`/`--declined`) counts 0 and puts the clip back to
     delivered on its draft (no re-lock advice: that would buy a new draft; the start image is not declined by it).
   * `ingest --failed`/`--declined` takes the take's estimate off the log on either provider (credits or $; failed and
@@ -1429,8 +1430,8 @@ def _submit_higgsfield(pdir: Path, c: dict, *, yes: bool, resolution: str | None
 @project_hints
 def finalize(pdir: Path, cid: str, take_n: int, *, yes: bool = False, dry: bool = False, again: bool = False) -> dict:
     """`slop clip submit CLIP --provider higgsfield --finalize-from TAKE`: the request that finalizes a kept 480p
-    Higgsfield draft take at 1080p (draft_job_id + a get_cost preflight). A new take is opened ("requested", like any
-    Higgsfield submit) with its own request file (clips/CLIP/higgsfield-take-N-finalize-of-D.json). A draft that was
+    Higgsfield draft take at 1080p (draft_job_id + an estimate_video_cost preflight). A new take is opened ("requested",
+    like any Higgsfield submit) with its own request file (clips/CLIP/higgsfield-take-N-finalize-of-D.json). A draft that was
     already finalized (a take with finalize_of = D that did not fail) is refused unless `again` (the owner wants a second
     paid finalize). The edit uses the newest delivered take, so a sung clip's finalized take must be measured
     (`slop clip sync CLIP --take N`) before `edit edl` / render: until then it has no lag correction."""
@@ -1484,7 +1485,7 @@ def finalize(pdir: Path, cid: str, take_n: int, *, yes: bool = False, dry: bool 
     cr = req["expected_credits"]
     if dry:
         lines = [f"{cid} DRY RUN (nothing sent or spent): finalize take {take_n} at 1080p (draft_job_id "
-                 f"{req['draft_job_id']}), ~{cr:g} credits (observed 12/s; get_cost is the truth)", "prompt:",
+                 f"{req['draft_job_id']}), ~{cr:g} credits (observed 12/s; {hf.VIDEO_ESTIMATE} is the truth)", "prompt:",
                  req["request"]["params"]["prompt"]]
         if probs:
             lines.append("before submit: " + "; ".join(probs))
@@ -1494,8 +1495,8 @@ def finalize(pdir: Path, cid: str, take_n: int, *, yes: bool = False, dry: bool 
         return {"dry_run": True, "clip": cid, "provider": "higgsfield", "finalize_of": int(take_n), "expected_credits": cr,
                 "would_send": req["request"]["params"], "lock_problems": probs, "text": "\n".join(lines)}
     if not yes:
-        raise SlopError(f"finalizing {cid} take {take_n} spends Higgsfield credits (~{cr:g} at 1080p; get_cost tells the "
-                        f"exact price): show the owner the estimate, then re-run with --yes")
+        raise SlopError(f"finalizing {cid} take {take_n} spends Higgsfield credits (~{cr:g} at 1080p; {hf.VIDEO_ESTIMATE} "
+                        f"tells the exact price): show the owner the estimate, then re-run with --yes")
     ledger.check_budget(pdir, "higgsfield", add_usd=cr * hf.USD_PER_CREDIT, add_credits=cr, yes=yes)
     new_n = len(takes) + 1                                           # its own file: a later finalize never overwrites it
     p = store.clip_folder(pdir, cid) / f"higgsfield-take-{new_n}-finalize-of-{int(take_n)}.json"
@@ -1513,7 +1514,8 @@ def finalize(pdir: Path, cid: str, take_n: int, *, yes: bool = False, dry: bool 
     sync_line = (f"; then REQUIRED: slop clip sync {cid} (a finalize may not keep the lip sync)"
                  if c.get("kind") == "sung" else "")
     return {"clip": cid, "take": tk["n"], "finalize_of": int(take_n), "request_file": str(p), "expected_credits": cr,
-            "text": f"{cid}: wrote the finalize request for take {take_n} (1080p, ~{cr:g} credits expected; get_cost first) "
+            "text": f"{cid}: wrote the finalize request for take {take_n} (1080p, ~{cr:g} credits expected; "
+                    f"{hf.VIDEO_ESTIMATE} first) "
                     f"to {store.rel(pdir, p)}. The bot runs it with its Higgsfield connector (how_to_run in the file), "
                     f"then: slop clip ingest {cid} --url RESULT_URL --job-id JOB_ID --credits N{sync_line}"}
 

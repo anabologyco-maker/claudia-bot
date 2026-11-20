@@ -20,7 +20,7 @@ from slop.onboard import state as st
 FAKE_KEY = "sk-or-v1-THISISAFAKEKEYFORTESTSONLY0123"
 ALL_MODULES = list(cli.MODULES)
 REAL = {n: getattr(probes, n) for n in ("doctor", "agents", "gpu", "setup_running")}
-N_ITEMS = 31
+N_ITEMS = 32
 
 
 @pytest.fixture(autouse=True)
@@ -137,6 +137,11 @@ def test_next_walks_the_studio_setup(capsys, env, monkeypatch):
     assert out["item"]["id"] == "taste" and out["item"]["next_skill"] == "claudia-relay"   # the production runs it
     rc, out = run(capsys, "onboard", "mark", "taste", "--skip", "--note", "later")
     assert rc == 0 and "warn" not in out, "taste is recommended, not required"
+    rc, out = run(capsys, "onboard", "next")                  # Suno's own connector: a record step (Grok adds it)
+    assert out["item"]["id"] == "suno-mcp" and out["record_cmd"] == "slop onboard mark suno-mcp --connected"
+    assert "https://api.suno.com/mcp" in out["item"]["do"] and "suno.com/mcp" in out["item"]["do"]
+    rc, out = run(capsys, "onboard", "mark", "suno-connector", "--connected")
+    assert rc == 0 and out["item"] == "suno-mcp" and out["mark"] == "done"
     rc, out = run(capsys, "onboard", "next")
     assert out["all_set"] and out["item"] is None and out["hand_off"] == "claudia-relay" and out["stuck"] == []
     assert "Make something with Claudia: skill claudia-relay" in out["text"] and out["next"] == "slop --project my-song status"

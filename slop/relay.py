@@ -15,9 +15,10 @@ One relay per bot, no project name needed. Grok's side:
 The production's side (it works in the projects folder and picks or creates the project itself):
   slop relay say TEXT [--show FILE ...]                          a message for the director
   slop relay ask QUESTION [--default X] [--show FILE ...]        one question, with its default
-  slop relay job --kind grok-imagine|midjourney|suno|browser|person ...   browser work for Grok (all of it), or a step
-                                                                 only the person can
-                                                                 do; numbered J-0003
+  slop relay job --kind grok-imagine|midjourney|suno|browser|person ...   work for Grok: Grok Imagine with its own
+                                                                 tool, Suno through its connector, Midjourney and
+                                                                 any site in its browser; or a step only the person
+                                                                 can do; numbered J-0003
   slop relay inbox                                               new messages, marked read
 
 Files, in $SLOP_HOME/relay/ (all LF; appends for the logs, atomic renames for the rest; a short lock folder guards
@@ -66,10 +67,14 @@ MCP_NAME = "claudia"
 MCP_URL = "https://claudia.gallery/mcp"
 EARSHOT_MCP, ELEVEN_MCP = "earshot", "elevenlabs"   # the production's audio tools (stdio MCP servers)
 ELEVEN_PKG = "elevenlabs-mcp"                       # the official server; it needs mcp<2, earshot mcp>=2: own env
+# (0.12.2 is its last release: ElevenLabs now points to a hosted server that signs in with OAuth only, no key, which a
+# production with no browser cannot use; the local one still runs on the newest elevenlabs SDK)
 # its tools the production never runs: phone calls, conversational agents, a clone of a real person's voice (a
-# likeness), and playback (this computer has no speakers)
+# likeness), playback (this computer has no speakers), and changes to the person's account (a designed voice saved to
+# their library, audio uploaded for inpainting)
 ELEVEN_BLOCKED = ("make_outbound_call", "list_phone_numbers", "create_agent", "add_knowledge_base_to_agent",
-                  "simulate_conversation", "voice_clone", "play_audio")
+                  "simulate_conversation", "voice_clone", "play_audio", "create_voice_from_preview",
+                  "upload_music_for_inpainting")
 SKILL_URL = "https://claudia.gallery/skill/claudia-skill.zip"
 ENGINES = ("claude", "codex")
 DEFAULT_MODEL = {"claude": "opus", "codex": None}
@@ -91,12 +96,14 @@ LOCK_STALE_S = 60.0            # every change holds the lock for milliseconds; a
 BRIEF_MARK = "<!-- slop relay: production brief"
 BRIEF_FILES = {"claude": "CLAUDE.md", "codex": "AGENTS.md"}
 JOB_ENV = ("SLOP_JOB_ID", "SLOP_PROGRESS_FILE", "SLOP_JOB_FILE", "SLOP_FREE_ONLY", "SLOP_PROJECT")
-NO_SESSION_RE = re.compile(r"(?i)no conversation found|session[^.\n]{0,40}not found|thread[^.\n]{0,40}not found")
+NO_SESSION_RE = re.compile(r"(?i)no conversation found|session[^.\n]{0,40}not found|thread[^.\n]{0,40}not found|"
+                           r"no rollout found")    # Codex 0.17x: exec resume <gone> says "no rollout found for thread id"
 SIGNIN_RE = re.compile(r"(?i)\b401\b|authenticat|not logged in|please (?:log|sign) ?in|invalid[^.\n]{0,30}token")
 LIMIT_RE = re.compile(r"(?i)usage limit|rate limit|session limit|hit your limit|limit reached")
 EFFORT_DEFAULT = "xhigh"       # both engines; a level the engine or its model does not take falls back to its default
 EFFORT_ENV = {"claude": "SLOP_CLAUDE_EFFORT", "codex": "SLOP_CODEX_EFFORT"}
-EFFORT_USUAL = {"claude": ("low", "medium", "high", "xhigh", "max"), "codex": ("low", "medium", "high", "xhigh")}
+EFFORT_USUAL = {"claude": ("low", "medium", "high", "xhigh", "max"),
+                "codex": ("low", "medium", "high", "xhigh", "max", "ultra")}
 EFFORT_RE = re.compile(r"(?i)effort")
 EFFORT_FAST_S = 90.0           # an effort complaint only counts when the turn failed this fast (before any real work)
 
@@ -959,9 +966,51 @@ def _project_mj(base: Path) -> dict:
     return mj if isinstance(mj, dict) else {}
 
 
+def _imagine_image(path: str | None, flag: str, base: Path, wd: Path) -> Path | None:
+    """A picture for Grok's own Grok Imagine tool: it must exist and be JPEG, PNG or WebP."""
+    if not path:
+        return None
+    img = _abs_file(path, base, wd)
+    if img is None:
+        raise SlopError(f"{flag}: no such file: {path} (nothing was posted)")
+    if _real_ext(Path(img)) not in IMAGINE_TYPES:
+        raise SlopError(f"{flag}: {path} is not a JPEG, PNG or WebP picture (Grok Imagine takes only those; nothing "
+                        "was posted)")
+    return Path(img)
+
+
+def _imagine_fields(a, base: Path, wd: Path) -> dict:
+    """grok-imagine: check the job against what Grok's own tool makes (docs.x.ai/grok-bot/files-and-results)."""
+    clip = a.what == "clip"
+    img = _imagine_image(a.image, "--image", base, wd)
+    end = _imagine_image(getattr(a, "end_image", None), "--end-image", base, wd)
+    refs = [_imagine_image(r, "--ref", base, wd) for r in (getattr(a, "ref", None) or []) if r.strip()]
+    res = getattr(a, "res", None)
+    if not clip:
+        if end or res or a.seconds:
+            raise SlopError("a still takes no --end-image, --res or --seconds (those are for --what clip)")
+        if a.aspect and a.aspect not in IMAGINE_STILL_ASPECTS:
+            raise SlopError(f"--aspect {a.aspect}: Grok's image tool makes stills in "
+                            f"{', '.join(IMAGINE_STILL_ASPECTS)} (nearest: 3:2 -> 4:3, 2:3 -> 3:4); nothing was posted")
+    elif a.seconds is not None and not IMAGINE_SECONDS[0] <= a.seconds <= IMAGINE_SECONDS[1]:
+        raise SlopError(f"--seconds {a.seconds}: Grok Imagine clips run {IMAGINE_SECONDS[0]}-{IMAGINE_SECONDS[1]} s "
+                        "(nothing was posted)")
+    if len(refs) > IMAGINE_MAX_REFS:
+        raise SlopError(f"--ref: at most {IMAGINE_MAX_REFS} reference images ({len(refs)} given; nothing was posted)")
+    pics = [p for p in [img, end, *refs] if p]
+    if clip and sum(_size(str(p)) for p in pics) > IMAGINE_MAX_IMAGES_B:
+        raise SlopError(f"the clip's images add up to over {IMAGINE_MAX_IMAGES_B // 2**20} MB, the most Grok's video "
+                        "tool takes: send smaller copies (JPEG) and post the job again (nothing was posted)")
+    res = (res or IMAGINE_DEFAULT_RES) if clip else None
+    return {"image": str(img) if img else None, "end_image": str(end) if end else None,
+            "refs": [str(r) for r in refs] or None, "res": res,
+            "route": "browser" if res == "1080p" else "native"}
+
+
 def cmd_job(a) -> dict:
-    """(the production) ask Grok for browser work: Grok Imagine, Midjourney, Suno or any other site, all in Grok's own
-    signed-in browser; --kind person only for what only a person can do (a sign-in Grok cannot finish)."""
+    """(the production) ask Grok for work: Grok Imagine with Grok's own tool (grok.com in its browser only for a
+    1080p clip), Suno through its connector (Suno's own MCP; Grok's browser when it is not set up), Midjourney and any
+    other site in Grok's signed-in browser; --kind person only for what only a person can do."""
     wd, rd = _dirs()
     base = _save_base(a, wd)
     rec: dict = {"kind": "job", "job_kind": a.kind, "what": a.what, "note": a.note}
@@ -1019,12 +1068,7 @@ def cmd_job(a) -> dict:
                 raise SlopError(f"cannot read {a.prompt_file}: {e}") from None
         if not (prompt or "").strip():
             raise SlopError("a grok-imagine job needs its prompt: --prompt TEXT or --prompt-file FILE")
-        img = None
-        if a.image:
-            img = _abs_file(a.image, base, wd)
-            if img is None:
-                raise SlopError(f"--image: no such file: {a.image} (nothing was posted)")
-        rec.update(prompt=prompt, image=str(img) if img else None, aspect=a.aspect, seconds=a.seconds)
+        rec.update(prompt=prompt, aspect=a.aspect, seconds=a.seconds, **_imagine_fields(a, base, wd))
         default_save = base / "inbox" / "grok-imagine"
     else:
         if not a.text and not a.note:
@@ -1043,7 +1087,13 @@ def cmd_job(a) -> dict:
                    name=a.name or jid, files=[], turn=_turn_no())
         _append(rd / "outbox.jsonl", {k: v for k, v in rec.items() if v is not None})
     _log(rd, f"out #{oid} job {jid} ({a.kind}{' ' + a.what if a.what else ''})")
-    who = "Grok gives it to the person" if a.kind == "person" else "Grok runs it in its own browser"
+    who = {"person": "Grok gives it to the person",
+           "suno": "Grok makes it through the Suno connector (Suno's own MCP; its browser if that is not set up)",
+           "grok-imagine": ("Grok makes it on grok.com in its browser (1080p, on the person's X plan)"
+                            if rec.get("route") == "browser" else
+                            "Grok makes it with its own Grok Imagine tool (no browser"
+                            + (f", {rec['res']}" if rec.get("res") else "") + ")")}.get(
+        a.kind, "Grok runs it in its own browser")
     extra = ""
     if a.kind == "midjourney":
         extra = (f" Personalization: {'on (Grok presses the P button)' if rec['personalize'] else 'off'}."
@@ -1135,15 +1185,24 @@ def _real_ext(path: Path) -> str | None:
             return ext
     if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
         return ".webp"
-    if head[4:8] == b"ftyp":                          # a Grok Imagine clip
-        return ".mov" if head[8:12] == b"qt  " else ".mp4"
+    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":   # a Suno take (WAV on paid plans)
+        return ".wav"
+    if head[4:8] == b"ftyp":                          # a Grok Imagine clip (or an M4A song)
+        return ".m4a" if head[8:12] in (b"M4A ", b"M4B ") else ".mov" if head[8:12] == b"qt  " else ".mp4"
+    if head[:3] == b"ID3" or (len(head) > 1 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0 and head[1] & 0x06):
+        return ".mp3"                                 # (an MPEG audio frame; ADTS AAC has layer bits 00)
+    if head[:4] == b"fLaC":
+        return ".flac"
+    if head[:4] == b"OggS":
+        return ".ogg"
     return None
 
 
 def _with_real_ext(path: Path) -> Path:
     """A download saved without its extension (or with the wrong one) gets the one its bytes say."""
     ext = _real_ext(path)
-    fine = {ext, ".jpeg"} if ext == ".jpg" else VIDEO_EXT if ext in (".mp4", ".mov") else {ext}
+    fine = ({ext, ".jpeg"} if ext == ".jpg" else VIDEO_EXT if ext in (".mp4", ".mov")
+            else {".ogg", ".oga", ".opus"} if ext == ".ogg" else {ext})
     if not ext or path.suffix.lower() in fine:
         return path
     dst = path.with_name(path.name + ext) if not path.suffix or len(path.suffix) > 5 else path.with_suffix(ext)
@@ -1188,11 +1247,17 @@ def cmd_done(a) -> dict:
     files, missing = [], []
     for f in a.file or []:
         hit = _abs_file(f, Path(j.get("save") or wd), wd)
-        if hit and j.get("job_kind") in ("midjourney", "grok-imagine"):
+        if hit and j.get("job_kind") in ("midjourney", "grok-imagine", "suno"):
             hit = _with_real_ext(Path(hit))
         (files.append(str(hit)) if hit else missing.append(f))
     if missing:
         raise SlopError(f"--file: no such file: {', '.join(missing)} (save the downloads into {j.get('save')} first)")
+    if j.get("job_kind") == "suno":                   # a dead download link saves a sign-in or error page instead
+        bad = [f for f in files if _real_ext(Path(f)) not in AUDIO_EXT]
+        if bad:
+            raise SlopError(f"{', '.join(Path(f).name for f in bad)} is not a song (its bytes are no WAV, MP3, M4A, "
+                            "FLAC or Ogg audio; a download link that expired saves a page instead): download the take "
+                            "again with Suno's own download, then run done again (nothing was sent)")
     if not files and not (j.get("job_kind") == "browser" and a.note):
         raise SlopError(f"name the saved files: slop --json relay done {j['job']} --file PATH [--file PATH ...]"
                         + (" (a browser job with no files: --note '<what you found or did>')"
@@ -1202,9 +1267,14 @@ def cmd_done(a) -> dict:
         _mj_provenance(j, files, model)
     sizes = {f: s for f in files if (s := _media_size(Path(f)))}      # the real pixel size, for the production
     top = max((_area(s) for s in sizes.values()), default=0)
-    small = [f for f, s in sizes.items() if _area(s) < 0.8 * top]
+    native = j.get("job_kind") == "grok-imagine" and j.get("route") != "browser"
+    small = [] if native else [f for f, s in sizes.items() if _area(s) < 0.8 * top]
+    want = RES_SHORT_SIDE.get(j.get("res") or "")
+    low = [f for f, s in sizes.items() if want and Path(f).suffix.lower() in VIDEO_EXT
+           and min(int(v) for v in s.split("x")) < 0.95 * want]
     text = (f"[grok] {j['job']} done: files " + ", ".join(files) if files else f"[grok] {j['job']} done") \
         + ("\nsizes: " + ", ".join(f"{Path(f).name} {s}" for f, s in sizes.items()) if sizes else "") \
+        + (f"\nbelow the job's {j['res']}: " + ", ".join(Path(f).name for f in low) if low else "") \
         + (f"\nmodel: {model}" if model else "") + (f"\n{a.note}" if a.note else "")
     out = deliver(text, "grok", (j["job"], {"status": "done", "files": files, "sizes": sizes or None,
                                              "model": model, "ended": util.iso_now()}))
@@ -1216,11 +1286,17 @@ def cmd_done(a) -> dict:
                        "rendered a lower resolution than it showed. Before the next Generate, switch the resolution "
                        "down and back up")
         out["text"] += "\nwarning: " + out["warn"]
+    if low:
+        w = (f"{', '.join(Path(f).name for f in low)} came out below the job's {j['res']} (the production was told): "
+             + (f"every clip, ask your video tool for {j['res']} (it makes 480p unless asked)" if native
+                else "the person's X plan may not allow it"))
+        out["warn"] = f"{out['warn']}; {w}" if out.get("warn") else w
+        out["text"] += "\nwarning: " + w
     return out
 
 
 def cmd_claim(a) -> dict:
-    """(Grok) take a job before running it. One browser job at a time, and never one another run already took: two
+    """(Grok) take a job before running it. One job at a time, and never one another run already took: two
     runs of Grok (wake-ups) never make the same song or upload the same video twice."""
     _, rd = _dirs()
     _grok_touch(rd)
@@ -1238,7 +1314,7 @@ def cmd_claim(a) -> dict:
                             "message")
         busy = [x for x in _jobs(rd) if x["status"] == "claimed" and x["job"] != j["job"]]
         if busy:
-            raise SlopError(f"job {busy[0]['job']} is being run now (one browser job at a time): leave {j['job']} for "
+            raise SlopError(f"job {busy[0]['job']} is being run now (one job at a time): leave {j['job']} for "
                             "later and end without a message")
         if j.get("stale_h") and not a.stale_ok and not mine:
             raise SlopError(f"job {j['job']} is {j['stale_h']} h old: the production may have dropped it. Ask first: "
@@ -1336,7 +1412,8 @@ def _render_item(r: dict) -> str:
     return s
 
 
-JOB_FIELDS = ("id", "job", "job_kind", "what", "prompt", "image", "aspect", "seconds", "save", "name", "note", "text",
+JOB_FIELDS = ("id", "job", "job_kind", "what", "prompt", "image", "end_image", "refs", "aspect", "seconds", "res",
+              "route", "save", "name", "note", "text",
               "expect", "title", "style", "lyrics", "exclude", "instrumental", "url", "personalize", "plates",
               "expect_count",
               "status", "claimed_s", "claim_expired", "stale_h", "ts")
@@ -1349,8 +1426,8 @@ def _job_item(j: dict) -> dict:
 
 def _render_job(j: dict) -> str:
     s = f"job {j['job']} ({j.get('job_kind')}{', ' + j['what'] if j.get('what') else ''}): {j.get('status')}"
-    for k in ("prompt", "image", "aspect", "seconds", "url", "title", "style", "exclude", "instrumental", "plates",
-              "save", "name", "note"):
+    for k in ("prompt", "image", "end_image", "refs", "aspect", "seconds", "res", "route", "url", "title", "style",
+              "exclude", "instrumental", "plates", "save", "name", "note"):
         if j.get(k) not in (None, "", [], False):
             s += f"\n   {k}: {', '.join(j[k]) if isinstance(j[k], list) else j[k]}"
     if j.get("lyrics"):
@@ -1365,7 +1442,19 @@ def _render_job(j: dict) -> str:
 
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+AUDIO_EXT = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac"}
 MJ_PROMPT_MAX = 800                     # characters before the parameters (docs/50 §3: longer prompts get shortened)
+# Grok's own Grok Imagine tool (docs.x.ai/grok-bot/files-and-results, 2026-11): stills in five shapes; clips 1-15 s,
+# 480p unless 720p is asked (720p is its most), from a first frame, first + last frames or up to 14 references, all
+# the images of one clip about 35 MB. grok.com in Grok's browser still renders 1080p: `--res 1080p` goes there.
+IMAGINE_TYPES = {".jpg", ".png", ".webp"}
+IMAGINE_STILL_ASPECTS = ("1:1", "4:3", "3:4", "16:9", "9:16")
+IMAGINE_CLIP_ASPECTS = ("1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3")
+IMAGINE_SECONDS = (1, 15)
+IMAGINE_MAX_REFS = 14
+IMAGINE_MAX_IMAGES_B = 35 * 1024 * 1024
+IMAGINE_DEFAULT_RES = "720p"
+RES_SHORT_SIDE = {"480p": 480, "720p": 720, "1080p": 1080}
 LINK_OVER_B = 20 * 1024 * 1024          # bigger files (and every video) reach the person as a Drive link (skill drive)
 DRIVE_MAX_B = 95 * 1024 * 1024          # Drive takes uploads up to 100 MB: a bigger video never reaches the person
 
@@ -1414,7 +1503,7 @@ def _grok_next(items: list, prod: dict, jobs: list) -> str:
                          f"`slop --json relay claim {j['job']} --stale-ok`, then run it)")
             continue
         if running and (k in SKILL_FOR or k == "browser"):
-            continue                                  # one browser job at a time: the next after the running one
+            continue                                  # one job at a time: the next after the running one
         pbutton = f", the P button {'on' if j.get('personalize', True) else 'off'}" if k == "midjourney" else ""
         if (k in SKILL_FOR or k == "browser") and offered:
             how = f"skill {SKILL_FOR[k]}" if k in SKILL_FOR else "your browser, as its note says"
@@ -1426,7 +1515,7 @@ def _grok_next(items: list, prod: dict, jobs: list) -> str:
             steps.append(f"claim job {j['job']} (`slop --json relay claim {j['job']}`; refused: end without a "
                          f"message), then run it with {how} (save into {j.get('save')}, then `slop --json relay done "
                          f"{j['job']} --file PATH`, or `slop --json relay fail {j['job']} --reason '...'`)")
-            offered = True                            # one browser job at a time: the rest come after it
+            offered = True                            # one job at a time: the rest come after it
         else:
             steps.append(f"give job {j['job']} to the person (its copy blocks verbatim; save what they upload"
                          + (f" to {j['expect'][0]}" if j.get("expect") else f" into {j.get('save')}")
@@ -1706,8 +1795,9 @@ def _parse_claude(ev: dict, ps: dict) -> str | None:
         res = str(ev.get("result") or "")
         if res.strip():
             ps["text"] = res
-        if ps["is_error"]:
-            ps["error"] = res[:600] or ps["final"]
+        if ps["is_error"]:   # an error result may carry no `result`: its reason is in `errors` (a gone session too)
+            errs = "; ".join(str(e) for e in ev.get("errors") or [] if e)
+            ps["error"] = (res or errs)[:600] or ps["final"]
         return f"turn ended ({ps['final']}{', ERROR' if ps['is_error'] else ''}, {ev.get('num_turns')} steps)"
     if t == "rate_limit_event" and (ev.get("rate_limit_info") or {}).get("status") == "rejected":
         return "usage limit reached"
@@ -2258,7 +2348,7 @@ def register(sub) -> None:
     p.add_argument("--field", help="another field instead: style, lyrics, title, exclude, prompt")
     p.set_defaults(func=cmd_copy)
 
-    p = add("claim", help="(Grok) take a job before running it: one browser job at a time, never one another run "
+    p = add("claim", help="(Grok) take a job before running it: one job at a time, never one another run "
                           "took")
     p.add_argument("job", help="the job id, e.g. J-0003")
     p.add_argument("--stale-ok", action="store_true",
@@ -2292,16 +2382,26 @@ def register(sub) -> None:
     p.add_argument("--as-is", action="store_true", help="post a video even if phones will play it badly")
     p.set_defaults(func=cmd_ask)
 
-    p = add("job", help="(the production) ask Grok for browser work, all of it in Grok's own signed-in browser "
-                        "(--kind grok-imagine | midjourney | suno | browser); --kind person only for what only a "
-                        "person can do")
+    p = add("job", help="(the production) ask Grok for a job: grok-imagine (Grok's own Grok Imagine tool), suno "
+                        "(Suno's connector, else Grok's browser), midjourney | browser (Grok's signed-in browser); "
+                        "--kind person only for what only a person can do")
     p.add_argument("--kind", choices=["grok-imagine", "midjourney", "suno", "browser", "person"], required=True)
     p.add_argument("--what", help="grok-imagine: still | clip (others: a short label, e.g. plates, song)")
     p.add_argument("--prompt", help="grok-imagine: the prompt, verbatim")
     p.add_argument("--prompt-file", help="grok-imagine: read the prompt from this file")
-    p.add_argument("--image", help="grok-imagine: a start image (must exist)")
-    p.add_argument("--aspect", choices=["16:9", "9:16", "1:1", "2:3", "3:2"])
-    p.add_argument("--seconds", type=int, help="grok-imagine clip length")
+    p.add_argument("--image", help="grok-imagine: a clip's first frame (JPEG, PNG or WebP; must exist)")
+    p.add_argument("--end-image", help="grok-imagine clip: its last frame (the same file as --image makes a loop)")
+    p.add_argument("--ref", action="append",
+                   help="grok-imagine: a reference image for how a person, an outfit or a place looks (repeat, up to "
+                        f"{IMAGINE_MAX_REFS})")
+    p.add_argument("--aspect", choices=list(IMAGINE_CLIP_ASPECTS),
+                   help="grok-imagine: stills 1:1, 4:3, 3:4, 16:9 or 9:16; clips also 3:2 and 2:3 (default: the "
+                        "first frame's shape)")
+    p.add_argument("--seconds", type=int, help=f"grok-imagine clip length, {IMAGINE_SECONDS[0]}-{IMAGINE_SECONDS[1]} "
+                                               "s (default 6)")
+    p.add_argument("--res", choices=["480p", "720p", "1080p"],
+                   help=f"grok-imagine clip resolution (default {IMAGINE_DEFAULT_RES}, the most Grok's own tool makes; "
+                        "1080p: Grok uses grok.com in its browser, on the person's X plan)")
     p.add_argument("--save", help="where the downloads go (default: the project's inbox/<kind>/)")
     p.add_argument("--name", help="file stem for the downloads (default: the job id)")
     p.add_argument("--note", help="one line for Grok or the person")

@@ -98,6 +98,10 @@ def test_claude_native_installer_and_link(env, monkeypatch):
     assert seen == ["https://claude.ai/install.sh"] and out["installed"][0]["method"] == "native"
     assert os.readlink(env["sh"] / "bin" / "claude") == str(env["home"] / ".local" / "bin" / "claude")
     rc, out = K.run("agents", "install", "claude", "--foreground", "--method", "npm", "--upgrade")
+    assert rc == 1 and "needs Node 22+" in out["installed"][0]["error"], "npm builds need Node 22 (2.1.198 on)"
+    from slop.agents import engines as E
+    monkeypatch.setattr(E, "node_info", lambda: {"path": "/usr/bin/node", "version": "v22.23.2", "major": 22})
+    rc, out = K.run("agents", "install", "claude", "--foreground", "--method", "npm", "--upgrade")
     assert out["installed"][0]["method"] == "npm"
     assert "@anthropic-ai/claude-code@latest" in (env["state"] / "npm-calls.txt").read_text()
 

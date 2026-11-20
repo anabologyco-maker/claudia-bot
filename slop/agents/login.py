@@ -40,7 +40,8 @@ ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 WAITING = ("starting", "waiting_code", "waiting_approval", "code_sent")
 TERMINAL = ("done", "failed", "expired", "cancelled")
 ANSI_RE = re.compile(r"\x1b\[[0-9;?<>=]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>78]|\r")
-REJECT_RE = re.compile(r"(?i)\b(invalid|error|failed|expired|denied|incorrect)\b|paste code here")
+REJECT_RE = re.compile(r"(?i)\b(invalid|error|failed|expired|denied|incorrect)\b|paste code here|wasn.t accepted|"
+                       r"couldn.t log in")     # 2.1.3xx: "Couldn't log in: That code wasn't accepted..."
 GEMINI_FAIL_RE = re.compile(r"(?i)failed to (?:authenticate|login|sign in)|invalid_grant|authentication failed")
 
 

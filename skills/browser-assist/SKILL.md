@@ -5,6 +5,8 @@ description: Use when, and only when, the owner explicitly asks you to drive Sun
 
 # Browser assist (opt-in) - Suno or Midjourney in your cloud browser
 
+Not the relay's way: there Grok runs Suno through Suno's own connector (skill suno) and Midjourney in its browser for you (`relay job`). This flow is only for an owner who asks to drive a site themselves.
+
 Both services' terms forbid automated use; the owner's account can be suspended. Read docs/50-plates-midjourney.md §9 (Midjourney) and docs/10-song.md §8 (Suno) first.
 
 1. Send the warning from docs/50-plates-midjourney.md §9 (for Suno, the same text with "Suno") and wait for "I accept the risk". Record it: `slop --json -p NAME decide 'browser assist for SERVICE: <their words>' --by owner`. A "no": stay human-in-the-loop and do not ask again in this project.

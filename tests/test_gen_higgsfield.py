@@ -60,8 +60,10 @@ def test_sung_request_shape(env, tmp_path):
     assert [m["role"] for m in prm["medias"]] == ["image_references", "audio_references"]
     assert prm["medias"][0]["value"] == f"<<MEDIA_ID:{cid}__image_references__0>>"
     assert [u["type"] for u in req["uploads"]] == ["image", "audio"] and req["uploads"][1]["filename"].endswith(".mp3")
-    assert req["get_cost"]["params"]["get_cost"] is True and req["expected_credits"] == 12
-    assert any("generate_video_batch" in s for s in req["how_to_run"]) and any("get_cost" in s for s in req["how_to_run"])
+    assert req["estimate"] == {"tool": "estimate_video_cost", "params": prm} and req["expected_credits"] == 12
+    assert any("generate_video_batch" in s for s in req["how_to_run"])
+    assert any(s.startswith("PREFLIGHT (free): estimate_video_cost") for s in req["how_to_run"])
+    _never_generate_video_with_get_cost(req)
     assert req["warnings"] and "late" in req["warnings"][0]            # the Higgsfield pre-roll tail warning
     c = store.load(env, cid)
     assert c["status"] == "submitted" and c["takes"][0]["status"] == "requested"
@@ -128,3 +130,113 @@ def test_duration_limits(env, tmp_path):
     c = store.load(env, cid); c["body"]["duration"] = 10; store.save(env, c)
     with pytest.raises(Exception, match="4–8 s"):
         hf.build_request(env, c)
+
+
+# ------------------------------------------------------------------------------------------------ the price check
+DRAFT_JOB = "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+
+def _never_generate_video_with_get_cost(req: dict) -> None:
+    """The connector's generate_video no longer takes get_cost ("Price a request with estimate_video_cost"): no key,
+    no params and no step of a request file asks for it; the steps name get_cost only to keep it out of the batch."""
+    assert "get_cost" not in req and "get_cost" not in req["request"]["params"]
+    assert req["estimate"]["tool"] == "estimate_video_cost" and req["estimate"]["params"] == req["request"]["params"]
+    assert '"get_cost"' not in json.dumps(req)
+    for s in req["how_to_run"]:
+        assert "generate_video {" not in s and "generate_video(" not in s, s
+        assert s.count("get_cost") == s.count("never add get_cost"), s
+
+
+def test_the_request_prices_with_estimate_video_cost_never_get_cost(env, tmp_path):
+    cid = ready(env, tmp_path, "s002", "sung")
+    rc, out = run(env, "clip", "submit", cid, "--yes", "--res", "480p")
+    assert rc == 0, out
+    req = json.loads(Path(out["request_file"]).read_text())
+    _never_generate_video_with_get_cost(req)
+    pre = next(s for s in req["how_to_run"] if s.startswith("PREFLIGHT"))
+    assert "estimate_video_cost {params: <request.params, unchanged>}" in pre and "submits nothing" in pre
+    assert "expect about 12 credits" in pre and "never an https URL" in pre
+    # the finalize request prices itself the same way
+    c = store.load(env, cid)
+    fin = hf.build_finalize(env, c, {"id": DRAFT_JOB, "n": 1, "body": dict(req["request"]["params"])})
+    _never_generate_video_with_get_cost(fin)
+    assert fin["how_to_run"][0].startswith("PREFLIGHT (free): estimate_video_cost")
+    assert "REJECTED below" in fin["how_to_run"][0] and "estimate_video_cost is the truth" in fin["how_to_run"][0]
+
+
+# a request file as 0.3.6 wrote it: the price from generate_video + get_cost (the connector refuses that flag now)
+OLD_PREFLIGHT = ('PREFLIGHT (free): generate_video {params: <request.params plus "get_cost": true>} (= the `get_cost` '
+                 'object in this file) — expect about 12 credits; stop and tell the user if it differs. medias[].value '
+                 'must be a media_id (never an https URL).')
+OLD_UNLIM = ('If the reply is an `unlim_choice` question instead of a job (the account holds free generations): ask the '
+             'user, then send the same request again with use_unlim set to their answer. Never set use_unlim yourself. '
+             'If the item is refused with a preset recommendation: resubmit only that item once with declined_preset_id '
+             'set to that preset id. On a transport timeout: do NOT resubmit and do NOT record it as rejected; check '
+             '`transactions` first (a charge or a job there: it ran, record that job id).')
+OLD_REJECTED = ('REJECTED (an error instead of a price or a job id: get_cost or the batch refuses the request, or the '
+                'balance is too low; NOT an unlim_choice question, the one preset resubmit above, or a timeout): nothing '
+                'was charged. Stop, tell the user, and record it at once (the ledger then counts 0): slop -p demo clip '
+                'ingest {cid} --failed "rejected: <the reply, verbatim>". The same when the user says not to send it '
+                'after get_cost: --failed "rejected: not sent, <why>".')
+OLD_FIN_PREFLIGHT = ('PREFLIGHT (free): generate_video {params: <request.params plus "get_cost": true>} (= the `get_cost` '
+                     'object) - expect about 48 credits (finalize prices are not published: get_cost is the truth). If it '
+                     'differs: stop and tell the user. If it refuses the finalize instead of a price (asks for medias, '
+                     'refuses the draft_job_id, any error): do not invent other params and do not submit - REJECTED below.')
+OLD_FIN_REJECTED = ('REJECTED (an error instead of a price or a job id: get_cost or the batch refuses the finalize, or the '
+                    'balance is too low; NOT an unlim_choice question or a timeout): nothing was charged and the draft '
+                    "stays the clip's take. Tell the user and record it at once, never leave it requested (the ledger then "
+                    'counts 0, status shows it rejected): slop -p demo clip ingest {cid} --failed "rejected: <the reply, '
+                    'verbatim>" (the user says not to send it after get_cost: --failed "rejected: not sent, <why>"). Then '
+                    'stop: do not re-lock or resubmit the clip (any retry advice that command prints is for a new take, not '
+                    'for a finalize).')
+
+
+def _as_written_by_036(req: dict, cid: str) -> dict:
+    old = json.loads(json.dumps(req))
+    old["get_cost"] = {"params": {**old.pop("estimate")["params"], "get_cost": True}}
+    was = {"PREFLIGHT": OLD_PREFLIGHT, "If the reply": OLD_UNLIM, "REJECTED": OLD_REJECTED.format(cid=cid)}
+    old["how_to_run"] = [next((v for k, v in was.items() if s.startswith(k)), s) for s in old["how_to_run"]]
+    return old
+
+
+def test_an_old_request_file_with_get_cost_still_loads(env, tmp_path, monkeypatch):
+    monkeypatch.setenv("SLOP_PROJECTS", str(env.parent))                # hint lines name the project: slop -p demo
+    cid = ready(env, tmp_path, "s002", "sung")
+    rc, out = run(env, "clip", "submit", cid, "--yes", "--res", "480p")
+    assert rc == 0, out
+    p = Path(out["request_file"])
+    new = json.loads(p.read_text(encoding="utf-8"))
+    assert hf.upgrade_request(json.loads(json.dumps(new))) == new                  # a current file: unchanged
+    old = _as_written_by_036(new, cid)
+    assert old["how_to_run"] != new["how_to_run"] and "get_cost" in old
+    p.write_text(json.dumps(old, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    got = hf.read_request(p)                                                       # the old key, read as the quote
+    assert got["estimate"] == new["estimate"] and "get_cost" not in got
+    # its PREFLIGHT and REJECTED steps read as 0.3.7 writes them; every other step stays as it was written
+    assert got["how_to_run"] == [n if n.startswith(("PREFLIGHT", "REJECTED")) else o
+                                 for o, n in zip(old["how_to_run"], new["how_to_run"])]
+    _never_generate_video_with_get_cost(got)
+    # `gen host` fills a media id into both copies of an old file and rewrites it in the current shape
+    ph = f"<<MEDIA_ID:{cid}__image_references__0>>"
+    assert ph in json.dumps(old["get_cost"]["params"]["medias"])
+    mid = "11111111-1111-4111-8111-111111111111"
+    rc, out = run(env, "gen", "host", cid, "--role", "start", "--media-id", mid)
+    assert rc == 0 and out["request_file"], out
+    req = json.loads(p.read_text(encoding="utf-8"))
+    assert [m["value"] for m in req["request"]["params"]["medias"]][0] == mid
+    assert req["estimate"]["params"] == req["request"]["params"] and "get_cost" not in req
+    _never_generate_video_with_get_cost(req)
+    # an old finalize request: the same quote, and its PREFLIGHT and REJECTED steps as 0.3.7 writes them
+    now = hf.build_finalize(env, store.load(env, cid), {"id": DRAFT_JOB, "n": 1, "body": dict(new["request"]["params"])})
+    was = {"PREFLIGHT": OLD_FIN_PREFLIGHT, "REJECTED": OLD_FIN_REJECTED.format(cid=cid)}
+    fin = json.loads(json.dumps(now))
+    fin["get_cost"] = {"params": {**fin.pop("estimate")["params"], "get_cost": True}}
+    fin["how_to_run"] = [next((v for k, v in was.items() if s.startswith(k)), s) for s in fin["how_to_run"]]
+    assert fin["how_to_run"] != now["how_to_run"] and now["expected_credits"] == 48
+    up = hf.upgrade_request(fin, env)
+    assert up["estimate"] == now["estimate"] and up["how_to_run"] == now["how_to_run"] and "get_cost" not in up
+    _never_generate_video_with_get_cost(up)
+    # an old file without steps, and a missing file
+    bare = hf.upgrade_request({"request": {"params": {"model": "m"}}, "get_cost": {"params": {"model": "m", "get_cost": 1}}})
+    assert bare == {"request": {"params": {"model": "m"}}, "estimate": {"tool": "estimate_video_cost", "params": {"model": "m"}}}
+    assert hf.read_request(tmp_path / "missing.json") is None

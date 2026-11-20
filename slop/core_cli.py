@@ -820,7 +820,7 @@ def failed_finalize(c: dict) -> dict | None:
 
 
 def finalize_label(tk: dict) -> str:
-    """"rejected" when it never got a job (refused at get_cost / submit) or the reason says so, else "failed"."""
+    """"rejected" when it never got a job (refused at the estimate / submit) or the reason says so, else "failed"."""
     why = str(tk.get("error") or "").lower()
     return "rejected" if (not tk.get("id") or "reject" in why or "refus" in why) else "failed"
 

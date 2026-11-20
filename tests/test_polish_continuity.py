@@ -200,7 +200,7 @@ def test_trims_for_the_turn_rule_kept_the_safety_rules():
     """Room for the turn rule came from trims; ARCHITECTURE §7 rule 9 (browser assist only after the owner's opt-in
     and their own sign-in) and rule 5 (inputs in colour, grade in post) stay in the always-loaded profile."""
     prof = profile()
-    five = line_with(prof, "5. Every browser task is yours")
+    five = line_with(prof, "5. Every job is yours")
     assert "Midjourney" in five and "Suno" in five and "never the person's" in five
     assert "never alter it to get it through" in line_with(prof, "4. Claudia stays herself")
     allowed = line_with(read(SKILL["clips"]), "Declined by a face filter")   # trimmed from the profile for the Studio
@@ -214,7 +214,8 @@ def test_trims_for_the_turn_rule_kept_the_safety_rules():
 def test_quick_runs_with_no_key_at_all():
     q = read(SKILL["mv-quick"])
     nokey = line_with(q, "No key at all")
-    for must in ("their own song file", "GenerateImage", "no clips (2.5D and devices only",
+    for must in ("their own song file", "GenerateImage", "motion clips only from Grok Imagine", "clip ingest CLIP --file",
+                 "or none (2.5D and devices",
                  "`slop --json -p NAME project set budget.motion_s 0` before the board", 'no "say so" checks'):
         assert must in nokey, must
     gi = line_with(q, "No key, GenerateImage")

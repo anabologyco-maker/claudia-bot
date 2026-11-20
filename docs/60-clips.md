@@ -464,18 +464,20 @@ rich cinematic detail`, or drop the video reference.
 - **Price: 3 / 7 / 12 credits per second** at 480p draft / 720p / 1080p (4 s at 720p = 28 credits). At top-up prices
   (≈ 5.0–5.9 ¢ per credit) that is **≈ $0.35–0.41/s at 720p**, 1.5–1.8× OpenRouter. `generate_audio: false` does **not**
   lower the price on Higgsfield.
-- **Preflight every new configuration** with `generate_video` and `get_cost: true` (free, submits nothing; not allowed
-  inside a batch). Prices have changed before.
+- **Preflight every new configuration** with `estimate_video_cost` and the request's own `params` (free, submits
+  nothing; `generate_video` no longer takes `get_cost`, and `generate_video_batch` rejects it). Prices have changed before.
 - Request: `model: "seedance_2_5"`, **`mode: "omni_reference"` always explicit** (the default is text-to-video),
   `resolution`, `aspect_ratio: "16:9"`, `duration`, `medias: [{role, value: media_id}]` in the order
-  `start_image → image_references → video_references → audio_references`, `prompt`, `generate_audio` (omit = true for sung,
-  `false` for motion). Never set `use_unlim: true` unless the owner asks.
+  `start_image → image_references → video_references → audio_references` (a media id or a job id, never an https URL),
+  `prompt`, `generate_audio` (omit = true for sung, `false` for motion). Never set `use_unlim: true` unless the owner
+  asks: omitted, an account with a free allowance gets an `unlim_choice` question back (nothing submitted), and the
+  owner answers it.
 - **Batches:** `generate_video_batch` takes ≤ 12 requests; poll with `jobs_wait` (≤ 12 jobs, ≤ 15 s per call; wait
   `poll_after_seconds` between calls). Renders took ~4–11 min (median ≈ 7). The toolkit writes the request file; the bot
   passes it **verbatim** and writes the job manifest **immediately** after each submit.
 - **Per-item failures:** a "preset recommended instead" refusal → resubmit only that item with `declined_preset_id`;
   balance too low → stop and report; **never resubmit an item that got a job id**; a transport timeout means the outcome
-  is unknown → check `transactions` before any retry.
+  is unknown → check `transactions` before any retry, and retry only once the outcome is known.
 - Blocked jobs are refunded (silent "failed" and "nsfw": `62-moderation.md`). Result URLs are public; download right
   away. Output: 1280×720, 24 fps, 97 frames for 4 s; with audio on, a 32 kHz stereo track; with audio off, **no audio
   stream** (nothing for a sync check).
@@ -487,7 +489,7 @@ rich cinematic detail`, or drop the video reference.
   `slop clip ingest W02 --url <result URL> --job-id <job id> --credits 28` adds the take (`--credits` = what
   `transactions` charged, not the file's estimate).
 - **A request that never ran counts 0:** the connector refused it before a job id (balance, an ineligible draft), or the
-  owner said no after `get_cost` → `slop clip ingest W02 --failed "rejected: <the reply, verbatim>"` (or `"rejected: not
+  owner said no after the estimate → `slop clip ingest W02 --failed "rejected: <the reply, verbatim>"` (or `"rejected: not
   sent, <why>"`). A job that ran and failed → `--failed "<the reason, verbatim>"`. Either way the take's estimate comes
   off the project log (the Studio run's log said 114 credits for 66 real before this). A transport timeout is neither:
   check `transactions` first, it may have run and been charged.
@@ -575,10 +577,10 @@ Test cheap, then pay for the keeper.
 
 - **Higgsfield's built-in loop:** submit with `draft: true` at 480p (3 cr/s) → check the take (sync for sung windows,
   frames for motion) → finalize only the passing drafts at 1080p with `draft_job_id` (within 7 days). The finalize price
-  is unknown: preflight it with `get_cost`. Whether finalize keeps the sync is untested: **run the sync check again on the
-  finalized take**. A finalize the connector refuses or that fails is recorded with `slop clip ingest CLIP --failed
-  "rejected: …"`: it counts 0, the clip goes back to delivered on its draft, and a retry (`--finalize-from TAKE` again)
-  waits for the owner's yes, never a re-lock and a new paid draft.
+  is unknown: preflight it with `estimate_video_cost`. Whether finalize keeps the sync is untested: **run the sync check
+  again on the finalized take**. A finalize the connector refuses or that fails is recorded with `slop clip ingest CLIP
+  --failed "rejected: …"`: it counts 0, the clip goes back to delivered on its draft, and a retry (`--finalize-from TAKE`
+  again) waits for the owner's yes, never a re-lock and a new paid draft.
 - **OpenRouter:** there is no finalize. A 480p take ($0.103/s) is a separate generation: use it to test a recipe, a
   blocking or a model; then generate the keeper at 720p and check it again (the motion will differ).
 - **Show the owner a cheap proof before committing to a method** (anabology: "Wait show me the short clip w audio
@@ -864,7 +866,7 @@ Note that a take of this window from that round held 99 % of its sung seconds in
 | Most photoreal sung close-ups declined ("PrivacyInformation") | OpenRouter's face filter (18 of 27 on SP) | route photoreal sung shots to Higgsfield first; on OpenRouter-only projects, wider framings or cutaways, never a restyled lead (§6.5) |
 | 403 on every submit while the account has credit | the API key's own limit | the owner raises the key limit |
 | Response without a job id | not submitted | do not count; resubmit once the cause is known |
-| Higgsfield returns `unlim_choice` | `use_unlim` omitted on an unlimited-capable model | resend with `use_unlim: false` unless the owner opts in |
+| Higgsfield returns `unlim_choice` (nothing submitted) | `use_unlim` omitted while the account holds a free allowance | ask the owner, then resend the same params with `use_unlim` set to their answer; never pick for them |
 | Grey proxy shapes in a 3D move | previz leaked | "take only the camera move from it…", or drop `@Video1` |
 | Action reversed or cut short | no end state | name the end state |
 | Headcount changes | unstated | state the exact number |

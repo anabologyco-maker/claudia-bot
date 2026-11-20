@@ -97,7 +97,7 @@ CATALOG = [
          cost="your ElevenLabs plan's credits; the production prices each call and asks first",
          unlocks="ElevenLabs voices, speech, sound effects and music for the production (its MCP tools)"),
     dict(id="higgsfield", group="connectors", title="Higgsfield connector", kind="record", need="ccc",
-         cost="your Higgsfield credits; every video is priced before it is made (get_cost)",
+         cost="your Higgsfield credits; every video is priced before it is made (estimate_video_cost)",
          unlocks="Higgsfield video: Seedance 2.5 sung clips (copies the vocals more reliably on stubborn windows), "
                  "Kling, Veo and more on your credits"),
     dict(id="drive", group="connectors", title="Google Drive connector", kind="record", need="ooo",
@@ -111,9 +111,14 @@ CATALOG = [
     dict(id="suno", group="music", title="Suno plan", kind="plan", need="occ",
          cost="your Suno plan; Free plan songs are for non-commercial use only",
          unlocks="Songs from your own Suno account (the bot writes paste-ready song packs)"),
-    dict(id="suno-signin", group="music", title="Suno signed in (Grok's browser)", kind="record", need="ooo",
-         cost="free; Suno's terms limit automated use (a one-line heads-up at sign-in)",
-         unlocks="Grok makes Opus's songs on suno.com in its browser and saves both takes for Opus"),
+    dict(id="suno-mcp", group="music", title="Suno connector (Suno's own MCP)", kind="record", need="occ",
+         cost="your Suno plan's credits; each saved take uses one of its downloads (Free 7 in all, Pro 20 and "
+              "Premier 60 a month)",
+         unlocks="Grok makes Opus's songs through Suno's own connector, no browser, and saves both takes for Opus"),
+    dict(id="suno-signin", group="music", title="Suno signed in (Grok's browser, the fallback)", kind="record",
+         need="ooo", cost="free; Suno's terms limit automated use (a one-line heads-up at sign-in)",
+         unlocks="Only while the Suno connector is not set up (Suno's MCP is in early access): Grok makes Opus's songs "
+                 "on suno.com in its browser"),
     dict(id="lyria", group="music", title="Lyria songs (fallback)", kind="check", need="coo",
          cost="about $0.08 a full song, $0.04 a 30 s clip (OpenRouter)",
          unlocks="Songs without Suno: Lyria through OpenRouter"),
@@ -170,7 +175,7 @@ ITEM_IDS = [c["id"] for c in CATALOG]
 PRIORITY = ["tier", "toolkit", "path", "doctor", "openrouter", "higgsfield", "api-images", "video", "suno", "lyria",
             "midjourney", "mj-profile", "full-profile", "coding-agents", "agent-claude", "agent-codex", "agent-muse",
             "agent-gemini", "home-claude", "home-codex", "home-muse", "home-gemini", "gpu", "first-project", "taste",
-            "arena", "elevenlabs", "drive", "suno-signin", "mj-signin", "codex-images"]
+            "arena", "elevenlabs", "drive", "suno-mcp", "suno-signin", "mj-signin", "codex-images"]
 # `video` is said by the tier unlocks and by openrouter / higgsfield themselves
 HEADLINE = set(ITEM_IDS) - {"tier", "toolkit", "path", "doctor", "coding-agents", "video"}
 # items that follow other items (done as soon as one of them is): never marked done by hand, never a step of their own
@@ -193,7 +198,7 @@ MISSING_LABEL = {"video": "video (OpenRouter or Higgsfield)"}
 ALIASES = {"claude": "agent-claude", "codex": "agent-codex", "muse": "agent-muse", "gemini": "agent-gemini",
            "claude-code": "agent-claude", "muse-code": "agent-muse", "gemini-cli": "agent-gemini",
            "chatgpt": "agent-codex", "mj": "midjourney", "midjourney-plan": "midjourney", "mj-plan": "midjourney",
-           "suno-plan": "suno", "hf": "higgsfield", "gdrive": "drive", "google-drive": "drive", "home-gpu": "gpu",
+           "suno-plan": "suno", "suno-connector": "suno-mcp", "suno-browser": "suno-signin", "hf": "higgsfield", "gdrive": "drive", "google-drive": "drive", "home-gpu": "gpu",
            "project": "first-project", "key": "openrouter", "openrouter-key": "openrouter", "are.na": "arena",
            "eleven": "elevenlabs", "11labs": "elevenlabs",
            "doctor-check": "doctor", "taste-profile": "taste", "install": "toolkit", "full": "full-profile",
@@ -228,7 +233,7 @@ TIER_ASK = ("Which tier do you want? Quick: needs no account - stills from my ow
             "Midjourney, and the full analysis install, about $50-110. Director: Studio plus your own coding agent "
             "(Claude Code, Codex on a ChatGPT plan, or Muse Code) signed in, on my computer or yours, for storyboards "
             "and bespoke motion design. Unsure: Quick (it can change later).")
-AGENTS_ASK = ("Which coding-agent plans do you have? Claude (Pro or Max: Claude Code), ChatGPT (Plus or Pro: Codex), "
+AGENTS_ASK = ("Which coding-agent plans do you have? Claude (Pro, Max or Ultra: Claude Code), ChatGPT (Plus or Pro: Codex), "
               "Meta (Muse Code), Google (Gemini CLI), or none. The bot installs and signs in the matching agent on its "
               "own computer; it runs on the plan's own limits (no API cost).")
 AGENTS_ANSWERS = {"claude": "slop onboard set coding-agents claude", "chatgpt": "slop onboard set coding-agents codex",
@@ -746,13 +751,38 @@ def _signin(ctx: Ctx, iid: str, site: str, plan_item: str, plan: str | None, pai
                                      "to sign in again, the user signs in again themselves"}
     return {"raw": "todo", "next_skill": skill("setup-accounts"), "record_cmd": f"slop onboard mark {iid} --done",
             "why": f"Grok runs Opus's {site} jobs in its own browser; the user signs in there once",
-            "do": f"open {site} in your browser with a one-line heads-up that its terms limit automated use; the user "
-                  f"signs in THEMSELVES (never type a password). When you see them signed in, run the record "
-                  f"command."}
+            "do": f"open {site} in your browser with a one-line heads-up that its terms limit automated use. Sign in "
+                  f"with their saved login (Vault) or the Secure Form, which fill it in without you seeing it; single "
+                  f"sign-on, a passkey or a CAPTCHA: hand them the computer. Never type a password. When you see them "
+                  f"signed in, run the record command."}
+
+
+SUNO_MCP_URL = "https://api.suno.com/mcp"      # Suno's own MCP server (beta since 2026-10-28; OAuth, no key)
+
+
+def _suno_mcp(ctx: Ctx) -> dict:
+    plan = _settings(ctx).get("suno_plan")
+    if plan == "none":
+        return {"raw": "skipped", "why": "no Suno account"}
+    if not plan:
+        return {"raw": "blocked", "blocked_by": ["suno"], "why": "record the Suno plan first (suno)"}
+    r = _connector(ctx, "suno-mcp", "Suno", "call its credit balance tool; when it answers, ")
+    if r["raw"] != "done":
+        r["why"] = "Grok makes Opus's songs through Suno's own connector (no browser); " + r["why"]
+        r["do"] += (f" Not in the catalog: add a custom MCP server named suno at {SUNO_MCP_URL} (no key); the user "
+                    "signs in to Suno on its card. Suno refuses the sign-in (its MCP is in early access): the user asks "
+                    "for access at suno.com/mcp; meanwhile Grok's browser (item suno-signin).")
+    return r
 
 
 def _suno_signin(ctx: Ctx) -> dict:
-    return _signin(ctx, "suno-signin", "Suno", "suno", _settings(ctx).get("suno_plan"), PAID_SUNO, "Create")
+    m = _mark(ctx, "suno-mcp")
+    if m and m.get("state") == "done":
+        return {"raw": "skipped", "why": "not needed: Grok makes the songs through the Suno connector (suno-mcp)"}
+    r = _signin(ctx, "suno-signin", "Suno", "suno", _settings(ctx).get("suno_plan"), PAID_SUNO, "Create")
+    if r["raw"] == "todo":
+        r["why"] = "the fallback while the Suno connector is not set up: " + r["why"]
+    return r
 
 
 def _lyria(ctx: Ctx) -> dict:
@@ -1106,7 +1136,7 @@ def _first_project(ctx: Ctx) -> dict:
 
 FUNCS = {"tier": _tier, "toolkit": _toolkit, "path": _path, "doctor": _doctor, "full-profile": _full,
          "openrouter": _openrouter, "arena": _arena, "elevenlabs": _elevenlabs, "higgsfield": _higgsfield,
-         "drive": _drive, "suno": _suno,
+         "drive": _drive, "suno": _suno, "suno-mcp": _suno_mcp,
          "suno-signin": _suno_signin, "lyria": _lyria, "midjourney": _midjourney, "mj-profile": _mj_profile,
          "mj-signin": _mj_signin, "api-images": _api_images, "codex-images": _codex_images, "video": _video,
          "coding-agents": _coding_agents, "gpu": _gpu, "taste": _taste, "first-project": _first_project}

@@ -96,7 +96,7 @@ def claude() -> int:
         if code == os.environ.get("FAKE_GOOD_CODE", "good-code#0123456789abcdef"):
             (STATE / "claude_logged_in").write_text("1")
             out("Login successful."); return 0
-        out("Login failed: Request failed with status code 400")
+        out("Couldn't log in: That code wasn't accepted. It may be incomplete, expired, or already used.")
         time.sleep(30); return 1                     # like the real CLI: it does not exit at once
     if ARGS[:1] == ["mcp"]:
         return claude_mcp()

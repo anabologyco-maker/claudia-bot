@@ -559,8 +559,8 @@ def register(sub) -> None:
     p.add_argument("--dry-run", action="store_true",
                    help="show the exact request (mode, references, prompt) and the estimate; nothing is sent or spent")
     p.add_argument("--finalize-from", type=int, metavar="TAKE",
-                   help="Higgsfield: finalize this kept 480p draft take at 1080p (draft_job_id; get_cost first; ~12 "
-                        "credits/s); a sung clip's finalized take must be measured again with clip sync")
+                   help="Higgsfield: finalize this kept 480p draft take at 1080p (draft_job_id; estimate_video_cost "
+                        "first; ~12 credits/s); a sung clip's finalized take must be measured again with clip sync")
     p.add_argument("--again", action="store_true",
                    help="with --finalize-from: a SECOND paid finalize of a draft that was already finalized (only when "
                         "the owner asks; the first finalized take is kept)")

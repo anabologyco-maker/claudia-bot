@@ -15,23 +15,23 @@ How the Grok Bot works (three parts, one job each):
 
 | Part | Its job |
 |---|---|
-| **Grok** (the bot) | sign-ins and delegation only: it passes your words to Opus word for word, shows you what Opus posts, and runs Grok Imagine on grok.com in its own signed-in browser when Opus asks (your X plan, $0). It writes no prompts and makes no taste calls. |
+| **Grok** (the bot) | sign-ins and delegation only: it passes your words to Opus word for word, shows you what Opus posts, and runs Opus's jobs: Grok Imagine with its own tool ($0 extra), Suno through Suno's own connector, Midjourney in its signed-in browser. It writes no prompts and makes no taste calls. |
 | **Opus** (Claude Code on the bot's computer, on your Claude plan; Codex if you only have ChatGPT) | the production: ideas, lyrics, the board, every prompt, picks, the edit and the render, with this toolkit and the claudia.gallery MCP. It asks you at most six questions on a film and spends nothing without your yes (`docs/96-relay.md`). |
-| **claudia.gallery** (MCP, public, read-only) | who Claudia is and how her four films were made: the canon, the wiki, 1,927 real prompts. |
+| **claudia.gallery** (MCP, public, read-only) | who Claudia is and how her films were made: the canon, the wiki, the current recipe, the films' real prompts. |
 
 The toolkit is a single command-line program, `slop`, driven by Opus (or by you). It keeps all state in plain files
 inside a project folder, so work survives restarts, can be resumed by run id, and can be handed to another agent.
 
 | Scale (claudia.gallery's) | You need | Typical video spend |
 |---|---|---|
-| **Quick** | Claude (or ChatGPT) and X for Grok Imagine; your own song or a generated one | $0-20 |
-| **Studio** | + an OpenRouter key or Higgsfield credits (sung clips with measured lip sync), your own Suno and Midjourney (you press Create and paste; Opus writes the fields) | $50-110 |
+| **Quick** | Claude (or ChatGPT); Grok Imagine is built in; your own song or a generated one | $0-20 |
+| **Studio** | + an OpenRouter key or Higgsfield credits (sung clips with measured lip sync), your own Suno and Midjourney (Opus writes the fields, Grok makes them, you decide) | $50-110 |
 | **Full** | + a plan that runs multi-agent workflows for a day or two | $90-350 (the films, measured) |
 
 Rules the code enforces: every sung word on screen at its aligned time; cuts on the variable beat map; estimate
 before any paid call and confirm above the project threshold; real spend read from the provider; a declined
-reference is never altered to get past a safety filter; every browser task (Midjourney, Suno, Grok Imagine) is
-Grok's, in its own browser where you signed in once, and you only make the decisions; OFL fonts and Apache/MIT models
+reference is never altered to get past a safety filter; every job (Grok Imagine, Suno, Midjourney) is
+Grok's, on your own accounts, and you only make the decisions; OFL fonts and Apache/MIT models
 only (Depth-Anything-V2-**Small**, never Large).
 
 ## Install
@@ -328,12 +328,12 @@ or after the command name; the documented form is `slop --json --project NAME <c
 | `slop relay read [--wait S] [--all]` | what Grok shows next: new messages with their files, open jobs, the production's state, grok_next |
 | `slop relay done JOB [--file FILE] [--note NOTE] [--model MODEL]` | (Grok) a job's files are saved: mark it done and tell the production |
 | `slop relay copy JOB [--k K] [--field FIELD]` | (Grok) put a job's prompt on the clipboard to paste (never type a prompt by hand) |
-| `slop relay claim JOB [--stale-ok] [--token TOKEN]` | (Grok) take a job before running it: one browser job at a time, never one another run took |
+| `slop relay claim JOB [--stale-ok] [--token TOKEN]` | (Grok) take a job before running it: one job at a time, never one another run took |
 | `slop relay cancel JOB [--reason REASON]` | close a job no one needs any more (cancelled, not failed): the production's own, or Grok's when the person says so |
 | `slop relay fail JOB --reason REASON [--declined]` | (Grok) a job could not be done: mark it failed (--declined: the service refused it) |
 | `slop relay say TEXT [--show FILE] [--as-is]` | (the production) post a message for the director, with files to show |
 | `slop relay ask TEXT [--default DEFAULT] [--show FILE] [--as-is]` | (the production) ask the director one question, with its default |
-| `slop relay job --kind grok-imagine\|midjourney\|suno\|browser\|person [--what WHAT] [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--image IMAGE] [--aspect 16:9\|9:16\|1:1\|2:3\|3:2] [--seconds SECONDS] [--save SAVE] [--name NAME] [--note NOTE] [--text TEXT] [--title TITLE] [--style STYLE] [--lyrics LYRICS] [--lyrics-file LYRICS_FILE] [--exclude EXCLUDE] [--instrumental] [--url URL] [--plate PLATE] [--long] [--personalize on\|off] [--expect EXPECT]` | (the production) ask Grok for browser work, all of it in Grok's own signed-in browser (--kind grok-imagine \| midjourney \| suno \| browser); --kind person only for what only a person can do |
+| `slop relay job --kind grok-imagine\|midjourney\|suno\|browser\|person [--what WHAT] [--prompt PROMPT] [--prompt-file PROMPT_FILE] [--image IMAGE] [--end-image END_IMAGE] [--ref REF] [--aspect 1:1\|16:9\|9:16\|4:3\|3:4\|3:2\|2:3] [--seconds SECONDS] [--res 480p\|720p\|1080p] [--save SAVE] [--name NAME] [--note NOTE] [--text TEXT] [--title TITLE] [--style STYLE] [--lyrics LYRICS] [--lyrics-file LYRICS_FILE] [--exclude EXCLUDE] [--instrumental] [--url URL] [--plate PLATE] [--long] [--personalize on\|off] [--expect EXPECT]` | (the production) ask Grok for a job: grok-imagine (Grok's own Grok Imagine tool), suno (Suno's connector, else Grok's browser), midjourney \| browser (Grok's signed-in browser); --kind person only for what only a person can do |
 | `slop relay inbox` | (the production) new messages from the director and Grok, marked read |
 | `slop relay status` | the production's state, engine, session, message counts and open jobs |
 | `slop relay wake [URL]` | the wake-up routine: Grok's webhook, called when the production posts while Grok is not waiting (a URL turns it on; off; test); its key: $CLAUDIA_WAKE_KEY |

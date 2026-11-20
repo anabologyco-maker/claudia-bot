@@ -40,8 +40,8 @@ def test_a_job_is_claimed_once_and_one_at_a_time(tmp_path, monkeypatch):
     rc, out = K.run("relay", "claim", a, "--token", token)     # the same chat after "continue": its job again
     assert rc == 0 and out["token"] == token, out
     assert token not in json.dumps(K.run("relay", "read")[1])  # a wake-up run never sees it
-    rc, out = K.run("relay", "claim", b)                       # one browser job at a time
-    assert rc == 1 and "one browser job at a time" in out["error"]
+    rc, out = K.run("relay", "claim", b)                       # one job at a time
+    assert rc == 1 and "one job at a time" in out["error"]
     nxt = K.run("relay", "read")[1]["grok_next"]
     assert f"job {a.lower()} is being run" in nxt.lower() and f"claim job {b.lower()}" not in nxt.lower()
     rc, out = K.run("relay", "fail", a, "--reason", "out of credits")

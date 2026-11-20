@@ -1,8 +1,8 @@
 # 05 · claudia.gallery: the source of truth
 
 Read this before anything else in a session. Claudia is the AI popstar, an open character: anyone may make work with
-her. claudia.gallery holds her canon, the four films' records (ESCAPE VELOCITY, CLODYSSEY, BLISS, AIRPLANE MODE) and
-the wiki distilled from them. **It is the #1 source of truth.** When a doc in this toolkit disagrees with it,
+her. claudia.gallery holds her canon, her films' records (ESCAPE VELOCITY onward; `list_films` names them all), the
+wiki distilled from them and the current recipe (`get_recipe`). **It is the #1 source of truth.** When a doc in this toolkit disagrees with it,
 claudia.gallery wins: follow it, and tell the owner which doc to fix.
 
 **What the bot makes:** Claudia content, sized to the ask: a still, a clip, a song, a music video or a post. Claudia is
@@ -48,13 +48,17 @@ Without either, read the Markdown twins: `https://claudia.gallery/claudia.md`, `
 
 | Question | Tool |
 |---|---|
-| Who is she? The constants, the identity text (full and short), every look's wardrobe, her avatar tier, her voice, the never-list, the release norms | `claudia_canon` (call it first, every project) |
-| How was it done, and what are the rules? | `get_guide` with a topic: `start` (scales, accounts, the six checkpoints, spending, the first conversation, publishing), `consistency`, `song`, `storyboard`, `midjourney`, `seedance` (incl. providers and filters), `motion`, `pipeline`, `toolkit` (what to build), `formats`, `failures`; `section` reads one part |
-| What will a music video take, at which scale and cost? | `plan_film` (`scale`, `song_seconds`, `has`, `budget_usd`) |
-| A Midjourney prompt for a new still of her | `build_prompt` (`scene`, `framing`, `look`, `wardrobe`, `style`, `light`, `aspect`) |
+| Who is she? The constants, the identity text (full and short), every look's wardrobe, her avatar tier, her voice, the never-list, the release norms | `claudia_canon` (call it first, every project; `detail`: summary, looks, voice, norms, all) |
+| How is a film made now? | `get_recipe` (the current method on one page: call it first for a film; where an older guide disagrees, the recipe is newer) |
+| How was it done, and what are the rules? | `get_guide` with a topic: `recipe`, `start` (scales, accounts, the six checkpoints, spending, the first conversation, publishing), `consistency`, `song`, `storyboard`, `midjourney`, `seedance` (incl. providers and filters), `motion`, `pipeline`, `toolkit` (what to build), `formats`, `failures`; `section` reads one part (`offset`, `max_chars` for long ones) |
+| What will a music video take, at which scale and cost? | `plan_film` (`scale`, `song_seconds`, `has`, `budget_usd`, `kind`, `video_model`) |
+| A prompt for a new still of her | `build_prompt` (`scene`, `framing`, `look`, `wardrobe`, `style`, `light`, `aspect`, `mic`, `mood`, `sings`, `plate`, `outfit_image`; `model`: midjourney, the default, or gpt_image). Its Midjourney parameters still carry `--v`: the relay drops it and never adds the `--profile` its note suggests |
+| A video shot | `write_shot` (the lines, actions, first and last frame, look, camera, seconds, resolution, aspect, model) |
+| Is this prompt safe to spend on? | `check_prompt` (`prompt`, `kind`, `model`) |
+| Her kit | `get_kit` |
 | Is there a reference for this? What prompt made that image? | `search_images` (full text over every prompt), `browse_images`, then `get_image` (`include_image` to look at her) |
-| What did a film actually run? | `get_record` (`film`, `doc`: `readme`, `prompts-midjourney`, `prompts-seedance`, `prompts-suno`) |
-| The four films in numbers | `list_films` |
+| What did a film actually run? | `get_record` (`film`, `doc`: `readme`, `prompts-midjourney`, `prompts-seedance`, `prompts-suno`, `prompts-images`, `prompts-video`) |
+| The films in numbers | `list_films` (`film` for one in full) |
 | How to install the skill | `get_skill` |
 
 Prompts on the server: `claudia_film` (start a music video), `claudia_still` (a new still), `claudia_shot` (a
@@ -94,14 +98,18 @@ plates pass checkpoint 3.
 
 ---
 
-## 4. Browser work is Grok's
+## 4. Grok's jobs
 
-- **Suno.** Opus writes the lyric and style fields (`10-song.md` §4.6); Grok creates the song in its own browser, on
-  the person's account, and downloads both takes. Downloading on a paid plan is what allows commercial use.
+- **Suno.** Opus writes the lyric and style fields (`10-song.md` §4.6); Grok creates the song through Suno's own
+  connector (Suno's MCP; its browser only while that is not set up), on the person's account, and downloads both takes.
+  Downloading on a paid plan is what allows commercial use; each download counts against the plan's monthly downloads.
 - **Midjourney.** Opus writes the prompt blocks (`slop plates book`); Grok runs them in its browser and downloads every
   image. A personal style profile code is never published.
-- **Grok Imagine** on grok.com runs through Grok's browser with the person's own X login: Opus asks with `slop relay job --kind grok-imagine` (`96-relay.md`).
-- Sign-ins, captchas and two-factor prompts are always the person's.
+- **Grok Imagine** is Grok's own tool (no browser; up to 720p clips on the bot's Grok Bot usage); a 1080p clip runs on
+  grok.com in Grok's browser with the person's X plan. Opus asks with `slop relay job --kind grok-imagine`
+  (`96-relay.md`).
+- Sign-ins go through the person's saved login (Vault) or the Secure Form, which Grok fills in without seeing it;
+  single sign-on, passkeys, captchas and two-factor prompts are always the person's.
 
 ---
 

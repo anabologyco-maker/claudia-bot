@@ -5,7 +5,7 @@ job ids replaced) and tests/fixtures/gen/higgsfield_mcp_tools.json (the request 
 definitions). Covered: the plates/jobs.json batch runner (one estimate, one --yes, resumable), `clip submit --dry-run`
 (reference mode for sung clips), the output-audio refusal protocol (retry once, then the other provider), the Lyria
 stream decoder (independently padded base64 chunks), the image-edit medium, the calibrated image estimate, explicit
-tokens to the audio window, the Higgsfield request against the connector schema.
+tokens to the audio window, the Higgsfield request against the connector schema (priced with estimate_video_cost).
 """
 from __future__ import annotations
 
@@ -312,10 +312,20 @@ def test_higgsfield_request_matches_the_connector_schema(env, tmp_path, monkeypa
     for m in prm["medias"]:
         assert set(m) == set(MCP["generate_video"]["params"]["medias_item"]["required"])
         assert not m["value"].startswith("https://")                           # media ids only, never URLs
-    assert req["get_cost"] == {"params": {**prm, "get_cost": True}}
+    # the price: generate_video no longer takes get_cost; estimate_video_cost takes the same params and submits nothing
+    assert "get_cost" not in MCP["generate_video"]["params"]["properties"]
+    assert "estimate_video_cost" in MCP["generate_video"]["pricing"]
+    est = req["estimate"]
+    assert "get_cost" not in req and est == {"tool": "estimate_video_cost", "params": prm}
+    tool = MCP[est["tool"]]
+    assert tool["required"] == ["params"] and tool["params"]["same_as"] == "generate_video"
+    assert set(tool["params"]["required"]) <= set(est["params"]) and tool["submits"].startswith("nothing")
     steps = " ".join(req["how_to_run"])
+    assert "estimate_video_cost {params: <request.params, unchanged>}" in steps and "generate_video {" not in steps
     assert "timeout_seconds:15" in steps and MCP["jobs_wait"]["timeout_seconds"]["maximum"] == 15
     assert "unlim_choice" in steps and "media_confirm" in steps and "media_import_url" in steps
+    assert "do NOT resubmit" in steps and "retry only once the outcome is known" in steps    # the connector's own rule
+    assert "retry only after the original outcome is known" in MCP["generate_video"]["transport_timeout"]
     # job ids: Higgsfield ids are UUIDs (jobs_wait refuses anything else) - a warning, the id is kept
     rc, out = run(env, "clip", "ingest", "W01", "--pending", "--job-id", "job-1")
     assert rc == 0 and out["warnings"] and "UUID" in out["warnings"][0]

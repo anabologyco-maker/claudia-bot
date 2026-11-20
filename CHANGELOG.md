@@ -3,6 +3,15 @@
 Each release is a tag `vX.Y.Z`. A bot on an older release reminds its person once ("say update"); `slop update apply`
 installs it and prints the newest entries below.
 
+## 0.3.7
+- Grok Imagine without the browser: Grok makes Claudia's stills and clips with Grok Bot's own Grok Imagine, from a prompt, a first frame, first and last frames, or up to 14 reference images. Clips come at 720p, the most it makes; when Opus needs 1080p, Grok still makes that clip on grok.com with your X plan. No X sign-in is needed any more.
+- Suno through Suno's own connector: setup connects Suno's official MCP (you sign in to Suno once on its card; no key), and Grok makes Opus's songs through it with every field exactly as Opus wrote it. Suno's MCP is in early access: until yours is approved (ask at suno.com/mcp), Grok uses Suno in its browser as before.
+- Suno downloads: each saved take uses one of your plan's downloads (Pro 20, Premier 60 a month), and Opus knows it, so song rounds stay few. A take that is not a song (an expired link saves a page) is refused before it reaches Opus.
+- Grok Bot 1.0: Grok signs in to sites with your saved login (Vault) or the Secure Form, which fill it in without Grok seeing it; single sign-on, passkeys and CAPTCHAs still come to you. Drive uploads go through the Drive connector first.
+- Opus's tools: claudia.gallery's new tools (its current recipe first, shot writing, prompt checks), earshot's new sound-effect tools, and two more ElevenLabs tools blocked (ones that would change your account). earshot's setup no longer says its models downloaded when they did not.
+- Opus and Codex: a lost session now starts a fresh one instead of failing the turn (both engines), Codex offers its newest effort levels (max, ultra), and Claude's Ultra plan is named wherever the Claude plans are.
+- Higgsfield: clips and stills are priced with its new estimate tools (it no longer accepts the old price check).
+
 ## 0.3.6
 - No more double songs, repeated uploads or two Grok runs fighting over the browser: each job is claimed before it runs, one at a time, and a wake-up waits while Grok is working. A job over 6 hours old is never run without asking Opus first.
 - New for Opus and Codex: earshot, the production's ears (it describes, times and critiques every take, mix and cut; the full install adds it), and ElevenLabs voices, sound effects and music with your own key (optional; every paid call needs your yes).

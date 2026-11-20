@@ -30,7 +30,7 @@
 #   cache/cmudict/cmudict.dict   (--full) CMU Pronouncing Dictionary, raw data, BSD-2-Clause (the GPL `cmudict` PyPI
 #                     wrapper is not used); wordfreq: code Apache-2.0, data CC-BY-SA 4.0 (used locally only)
 #   vendor/earshot    (--full) earshot (MIT, github.com/Leonxlnx/earshot; the PyPI name is another project), installed
-#                     into the venv; its models (CLAP Apache-2.0, AST BSD-3, ~1.4 GB) in cache/earshot. Optional: a
+#                     into the venv; its models (CLAP Apache-2.0, AST BSD-3, ~1.1 GB) in cache/earshot. Optional: a
 #                     failed fetch only warns
 #   env.sh            PATH, HF_HOME, SLOP_* (NO secrets) - `. $SLOP_HOME/env.sh` in a shell, or call $SLOP_HOME/bin/slop
 #   bin/slop          the CLI shim
@@ -529,10 +529,15 @@ if [ "$PROFILE" = full ]; then
 fi
 if [ "$PROFILE" = full ]; then  # the production's ears; optional, so a failure only warns
   log "installing earshot, the newest from $EARSHOT_URL (describe, critique, timeline for the production)"
-  if earshot_fetch && uvpip --reinstall-package earshot "$EARSHOT_DIR[mcp]"; then
-    if [ -n "$(ls -A "$EARSHOT_HOME/hf" 2>/dev/null)" ]; then log "earshot models present: $EARSHOT_HOME/hf"
-    elif EARSHOT_HOME="$EARSHOT_HOME" with_timeout 1800 "$PY" -m earshot doctor --load >/dev/null 2>&1; then
-      log "earshot models downloaded (~1.4 GB): $EARSHOT_HOME/hf"
+  # --no-sources: earshot's pyproject sends torch to the PyTorch CPU index, which our PyPI fallback must not use;
+  # listen and images are the extras earshot's next release splits its audio and picture packages into (uv only warns
+  # about an extra a release does not have yet)
+  if earshot_fetch && uvpip --no-sources --reinstall-package earshot "$EARSHOT_DIR[mcp,listen,images]"; then
+    # doctor --fetch gets only the missing pinned files (and replaces an older cache); it exits 0 even when a
+    # download fails, so its JSON (models_cached) decides
+    if EARSHOT_HOME="$EARSHOT_HOME" with_timeout 1800 "$PY" -I -m earshot doctor --fetch --json 2>/dev/null |
+         "$PY" -I -c 'import json,sys; m=json.load(sys.stdin).get("models_cached") or {}; sys.exit(not (m and all(m.values())))'
+    then log "earshot models ready (~1.1 GB): $EARSHOT_HOME/hf"
     else warn "earshot's models did not download: they download on its first use"; fi
   else
     warn "earshot did not install: the production works without its ears (re-run: bash $REPO/bin/setup.sh --full)"
